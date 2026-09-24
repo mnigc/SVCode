@@ -1,0 +1,118 @@
+:root {
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, "Sarasa Mono SC", "Courier New", monospace;
+
+  --tabbar-h: 34px;
+  --statusbar-h: 24px;
+  --titlebar-h: 36px;
+  --splitter-hit: 5px;
+}
+
+html[data-theme='dark'] {
+  --bg: #17181c;
+  --bg-panel: #1d1e24;
+  --bg-raised: #24262e;
+  --bg-hover: #2b2e37;
+  --bg-active: #333745;
+  --border: #2e313a;
+  --border-strong: #3d414c;
+  --fg: #d8dae0;
+  --fg-dim: #9a9dab;
+  --fg-faint: #6b6e7b;
+  --accent: #5b9dff;
+  --accent-fg: #0d1220;
+  --danger: #e0655b;
+  --warn: #d9a441;
+  --scrollbar: #3a3e49;
+
+  --cm-editor-bg: var(--bg);
+  --cm-editor-fg: var(--fg);
+  --cm-gutter-bg: var(--bg);
+  --cm-gutter-fg: var(--fg-faint);
+  --cm-cursor: var(--accent);
+  --cm-selection: #2f4468;
+
+  --md-quote: #8a93a6;
+  --md-code-bg: #22242b;
+  --md-link: var(--accent);
+}
+
+html[data-theme='light'] {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-raised: #eceef2;
+  --bg-hover: #e3e6ec;
+  --bg-active: #d7dce6;
+  --border: #dfe2e8;
+  --border-strong: #c7ccd6;
+  --fg: #23262e;
+  --fg-dim: #5d6270;
+  --fg-faint: #8b90a0;
+  --accent: #1f6feb;
+  --accent-fg: #ffffff;
+  --danger: #c0392b;
+  --warn: #9a6700;
+  --scrollbar: #c9ced8;
+
+  --cm-editor-bg: var(--bg);
+  --cm-editor-fg: var(--fg);
+  --cm-gutter-bg: var(--bg-panel);
+  --cm-gutter-fg: var(--fg-faint);
+  --cm-cursor: var(--accent);
+  --cm-selection: #cfe3ff;
+
+  --md-quote: #5d6270;
+  --md-code-bg: #f2f3f5;
+  --md-link: var(--accent);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--border-strong);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
