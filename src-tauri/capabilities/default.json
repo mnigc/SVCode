@@ -8,11 +8,11 @@
     "opener:default",
     "dialog:default",
     "store:default",
-    "fs:default",
-    "fs:allow-read-dir",
-    "fs:allow-read-text-file",
-    "fs:allow-write-text-file",
-    "fs:allow-stat",
-    "fs:allow-exists"
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-is-maximized"
   ]
 }

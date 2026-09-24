@@ -6,6 +6,7 @@ import { EditorPane } from './components/EditorPane'
 import { PreviewPane } from './components/PreviewPane'
 import { StatusBar } from './components/StatusBar'
 import { Splitter } from './components/Splitter'
+import { TitleBar } from './components/TitleBar'
 
 export default function App() {
   const sidebarOpen = useWorkspace((s) => s.sidebarOpen)
@@ -14,15 +15,16 @@ export default function App() {
   const previewWidth = useWorkspace((s) => s.previewWidth)
 
   useEffect(() => {
+    void useWorkspace.getState().loadSystemTree()
+  }, [])
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!e.ctrlKey && !e.metaKey) return
       const s = useWorkspace.getState()
       const key = e.key.toLowerCase()
 
-      if (key === 'k') {
-        e.preventDefault()
-        void s.openFolderDialog()
-      } else if (key === 's') {
+      if (key === 's') {
         e.preventDefault()
         void s.saveActive()
       } else if (key === 'w') {
@@ -34,6 +36,9 @@ export default function App() {
       } else if (key === 'v' && e.shiftKey) {
         e.preventDefault()
         s.togglePreview()
+      } else if (key === '`' && s.selectedDir) {
+        e.preventDefault()
+        void s.openInTerminal()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -42,6 +47,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <TitleBar />
       <div className="panes">
         {sidebarOpen && (
           <>

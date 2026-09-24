@@ -4,21 +4,14 @@ import { KIND_LABEL } from '../lib/paths'
 export function EditorPane() {
   const tab = useWorkspace(activeTab)
   const editActive = useWorkspace((s) => s.editActive)
-  const openFolderDialog = useWorkspace((s) => s.openFolderDialog)
 
   if (!tab) {
     return (
       <div className="welcome">
         <h1>SVCode</h1>
         <p className="welcome-sub">轻量文本 / 代码编辑器，内置 md、图片、PDF 预览</p>
-        <button className="btn btn-lg" onClick={() => void openFolderDialog()}>
-          打开文件夹
-        </button>
+        <p className="welcome-sub">从左侧「此电脑」里挑一个文件开始。</p>
         <ul className="welcome-keys">
-          <li>
-            <kbd>Ctrl</kbd>
-            <kbd>K</kbd> <span>打开文件夹</span>
-          </li>
           <li>
             <kbd>Ctrl</kbd>
             <kbd>W</kbd> <span>关闭当前标签</span>
@@ -26,6 +19,10 @@ export function EditorPane() {
           <li>
             <kbd>Ctrl</kbd>
             <kbd>S</kbd> <span>保存</span>
+          </li>
+          <li>
+            <kbd>Ctrl</kbd>
+            <kbd>B</kbd> <span>切换侧栏</span>
           </li>
           <li>
             <kbd>Ctrl</kbd>

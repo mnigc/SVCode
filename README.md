@@ -13,14 +13,20 @@ SVCode (Tauri 2 窗口, WebView2)
 │   ├── 多标签编辑区（CodeMirror 6，M1 接入）
 │   └── 预览面板  markdown-it / <img> / pdf.js —— 只读
 └── 后端  Rust，尽量薄
-    └── tauri-plugin-fs（读写/监听）+ 文件类型路由
+    ├── 自写命令：list_drives / list_dir / read_text / write_text
+    ├── 自写命令：file_icon（Win32 shell 图标）/ open_terminal
+    └── 二进制资源走 IPC 字节流，不用 asset protocol
 ```
 
 ## 权限模型
 
-`capabilities/default.json` 里的 fs 权限**不含任何用户目录**。前端调用 `openFolder` 选中文件夹后，
-先 `invoke('grant_folder_scope')` 在运行时把这个目录（含子目录）加入 fs scope，之后才能读写。
-也就是说 SVCode 只能碰你显式打开过的目录。
+左侧树直接展示整机文件系统，不选文件夹、也没有 scope 白名单：读写走上面那几个自定义
+`#[tauri::command]`，它们不受 capability scope 约束，所以能枚举驱动器、读任意路径。
+`capabilities/default.json` 因此只剩窗口控制、对话框、store、opener 这些内置权限。
+
+代价是"能碰整个磁盘"这件事完全由前端决定，所以后端自己守两条硬线：
+超过约 5MB 的文本按只读打开，超过约 20MB 直接报错引导外部程序；保存用临时文件 + rename，
+且按打开时探测到的编码（UTF-8 / UTF-16 / GBK）写回，编码表示不了的字符会拒绝保存而不是写坏文件。
 
 ## 开发
 
@@ -38,6 +44,7 @@ pnpm tauri build   # 打包（NSIS）
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | M0 | 环境 + 脚手架 + 三栏骨架 + 打开文件夹 | 完成 |
+| M0.5 | 无边框标题栏、全量文件系统树 + 系统图标、外部终端 | 完成 |
 | M1 | CodeMirror 6 编辑核心、语言包、查找替换、设置持久化 | 待办 |
 | M2 | Markdown 编辑/预览分栏、GFM、滚动同步 | 待办 |
 | M3 | 图片 + PDF 预览（Rust 读字节 → blob URL） | 待办 |

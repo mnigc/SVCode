@@ -30,13 +30,10 @@ export function basename(path: string): string {
 
 export function dirname(path: string): string {
   const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-  return i < 0 ? '' : path.slice(0, i)
-}
-
-export function joinPath(dir: string, name: string): string {
-  if (!dir) return name
-  const sep = dir.includes('\\') && !dir.includes('/') ? '\\' : '/'
-  return dir.endsWith(sep) || dir.endsWith('/') || dir.endsWith('\\') ? dir + name : dir + sep + name
+  if (i < 0) return ''
+  // A file at a drive root lives in `C:\`, not in the drive-relative `C:`.
+  if (i === 2 && /^[a-zA-Z]:[\\/]/.test(path)) return path.slice(0, 3)
+  return path.slice(0, i)
 }
 
 export function extname(path: string): string {

@@ -1,4 +1,5 @@
 import { useWorkspace } from '../store/workspace'
+import { NodeIcon } from './NodeIcon'
 
 export function TabStrip() {
   const tabs = useWorkspace((s) => s.tabs)
@@ -25,7 +26,7 @@ export function TabStrip() {
             }
           }}
         >
-          <span className={`tab-kind kind-${t.kind}`} />
+          <NodeIcon spec={t.icon} size={14} />
           <span className="tab-name">{t.name}</span>
           <span className={`tab-dirty${t.dirty ? ' is-on' : ''}`}>●</span>
           <button
