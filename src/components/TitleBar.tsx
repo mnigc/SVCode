@@ -4,6 +4,7 @@ import { useWorkspace } from '../store/workspace'
 import { useSettings, type ThemeName } from '../lib/settings'
 import { useT, type TextKey } from '../lib/i18n'
 import { AboutDialog } from './AboutDialog'
+import logoUrl from '../assets/logo.png'
 
 interface MenuEntry {
   label?: string
@@ -134,9 +135,7 @@ export function TitleBar() {
       </button>
 
       <span className="brand" data-tauri-drag-region>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M5.4 4.6 2 8l3.4 3.4M10.6 4.6 14 8l-3.4 3.4" />
-        </svg>
+        <img src={logoUrl} width="16" height="16" alt="" aria-hidden />
         SVCode
       </span>
 

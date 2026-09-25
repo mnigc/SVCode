@@ -68,8 +68,9 @@
   color: var(--fg);
 }
 
-.brand svg {
-  color: var(--accent);
+.brand img {
+  display: block;
+  border-radius: 4px;
 }
 
 .topbar-menu {
