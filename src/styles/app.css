@@ -254,6 +254,12 @@
   background: var(--bg-hover);
 }
 
+/* While the row's context menu is open the pointer has left the row, so
+   hover is gone — pin the hover background until the menu closes. */
+.tree-row.is-ctx-open {
+  background: var(--bg-hover);
+}
+
 .tree-row.is-selected {
   background: var(--bg-active);
 }
@@ -289,6 +295,10 @@
 }
 
 .tree-row.is-denied:hover {
+  background: transparent;
+}
+
+.tree-row.is-denied.is-ctx-open {
   background: transparent;
 }
 
@@ -1875,6 +1885,24 @@ code {
 .dlg-btn.is-primary:hover {
   background: color-mix(in srgb, var(--accent) 85%, #fff);
   color: var(--accent-fg);
+}
+
+/* ---- network location dialog ---- */
+
+.net-input {
+  font-size: 13px;
+  padding: 7px 10px;
+}
+
+.net-hint {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--fg-faint);
+  padding: 2px 0 4px;
+}
+
+.net-hint.is-error {
+  color: var(--danger);
 }
 
 /* ---- settings dialog ---- */

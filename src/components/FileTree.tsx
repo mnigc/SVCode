@@ -11,6 +11,9 @@ const COLLAPSE_MS = 180
 
 interface TreeCtx {
   openMenu: (path: string, x: number, y: number) => void
+  /** Path whose context menu is currently open — keeps the row highlighted
+   * while the pointer wanders into the menu (hover alone would drop it). */
+  menuPath: string | null
 }
 
 function TreeNode({ path, depth, ctx }: { path: string; depth: number; ctx: TreeCtx }) {
@@ -100,7 +103,7 @@ function TreeNode({ path, depth, ctx }: { path: string; depth: number; ctx: Tree
   return (
     <>
       <div
-        className={`tree-row${fileActive ? ' is-selected' : ''}${dirActive ? ' is-dir-active' : ''}${node.access === 'denied' ? ' is-denied' : ''}`}
+        className={`tree-row${fileActive ? ' is-selected' : ''}${dirActive ? ' is-dir-active' : ''}${node.access === 'denied' ? ' is-denied' : ''}${ctx.menuPath === path ? ' is-ctx-open' : ''}`}
         style={{ paddingLeft: indent }}
         // Quick Access reveal scrolls this row into view by path.
         data-path={path}
@@ -229,6 +232,7 @@ export function FileTree() {
   const t = useT()
   const ready = useWorkspace((s) => Boolean(s.nodes[ROOT]))
   const rootError = useWorkspace((s) => s.rootError)
+  const netLocs = useSettings((s) => s.netLocations)
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
 
   useEffect(() => {
@@ -260,7 +264,20 @@ export function FileTree() {
   }
   return (
     <div className="tree" onContextMenu={(e) => e.preventDefault()}>
-      <TreeNode path={ROOT} depth={0} ctx={{ openMenu: (p, x, y) => setMenu({ x, y, path: p }) }} />
+      <TreeNode
+        path={ROOT}
+        depth={0}
+        ctx={{ openMenu: (p, x, y) => setMenu({ x, y, path: p }), menuPath: menu?.path ?? null }}
+      />
+      {/* Mounted \\server\share locations sit beside 此电脑, top-level. */}
+      {netLocs.map((p) => (
+        <TreeNode
+          key={p}
+          path={p}
+          depth={0}
+          ctx={{ openMenu: (p, x, y) => setMenu({ x, y, path: p }), menuPath: menu?.path ?? null }}
+        />
+      ))}
       {menu && <NodeMenu path={menu.path} x={menu.x} y={menu.y} onClose={() => setMenu(null)} />}
     </div>
   )

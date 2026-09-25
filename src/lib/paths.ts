@@ -68,6 +68,26 @@ export function joinPath(dir: string, name: string): string {
 /** True for drive roots (`C:\`) and `/`. */
 export const isRootPath = (path: string) => /^[a-zA-Z]:[\\/]$/.test(path) || path === '/'
 
+/**
+ * Normalize free-form user input into a canonical UNC path
+ * (`\\server\share` or deeper), or null if it isn't one. Accepts forward
+ * slashes (`//NAS/share`), strips trailing separators — Windows paths are
+ * case-insensitive, so callers comparing two UNC paths should fold case.
+ */
+export function normalizeUnc(input: string): string | null {
+  const p = input.trim().replace(/\//g, '\\')
+  const body = p.startsWith('\\\\') ? p.slice(2) : null
+  if (body === null) return null
+  const segs = body.split('\\').filter(Boolean)
+  // Server + share at minimum; a bare `\\server` is not browsable.
+  if (segs.length < 2) return null
+  return '\\\\' + segs.join('\\')
+}
+
+/** True for the root of a network location (`\\server\share`), which acts
+ * like a drive root: browsable, but not rename/delete/pin material. */
+export const isUncShareRoot = (path: string) => /^\\\\[^\\]+\\[^\\]+\\?$/.test(path)
+
 export function dirname(path: string): string {
   const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
   if (i < 0) return ''

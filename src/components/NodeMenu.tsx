@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
 import { create } from 'zustand'
-import { useWorkspace, THIS_PC, type NodeInfo } from '../store/workspace'
+import { useWorkspace, THIS_PC, IS_WINDOWS, type NodeInfo } from '../store/workspace'
 import { useQuickAccess } from '../store/quickAccess'
-import { basename, dirname } from '../lib/paths'
+import { useSettings } from '../lib/settings'
+import { basename, dirname, isRootPath, isUncShareRoot } from '../lib/paths'
 import { useT } from '../lib/i18n'
 
 /**
@@ -65,12 +66,18 @@ export function NodeMenu({
   // file ops would just surface disk errors.
   const missing = hint?.missing ?? false
   const ws = useWorkspace.getState()
-  const isDriveRoot = /^[a-zA-Z]:[\\/]$/.test(node.path) || node.path === '/'
+  // Drive roots and \\server\share roots behave alike: browsable, paste
+  // target, terminal — but not rename/delete/copy/pin material.
+  const isDriveRoot = isRootPath(node.path) || isUncShareRoot(node.path)
   const isDir = node.isDir
   const denied = node.access === 'denied'
   const canCreate = isDir && !denied && !missing
   const canMutate = !isDriveRoot && !denied && !missing
   const pinnedHere = pinned.includes(path)
+  // Mounted network locations can be unmounted (unlike real drives).
+  const isNetRoot =
+    IS_WINDOWS &&
+    useSettings.getState().netLocations.some((c) => c.toLowerCase() === path.toLowerCase())
 
   const item = (
     label: string,
@@ -149,8 +156,12 @@ export function NodeMenu({
       item(t('tree.openToSide'), () => void ws.openToSide(path)),
     )
   }
+  // Copying a whole drive is not a real workflow, and pinning one to Quick
+  // Access just renders a useless empty entry — drop both for drive roots.
+  if (!isDriveRoot) {
+    items.push(item(t('tree.copy'), () => ws.setClipboard('copy', path), { disabled: denied || missing }))
+  }
   items.push(
-    item(t('tree.copy'), () => ws.setClipboard('copy', path), { disabled: denied || missing }),
     item(t('tree.cut'), () => ws.setClipboard('cut', path), { disabled: !canMutate }),
     item(t('tree.paste'), () => void ws.pasteInto(path), {
       disabled: !isDir || denied || !clipboard,
@@ -166,13 +177,25 @@ export function NodeMenu({
     items.push(
       <div className="menu-sep" key="s3" />,
       item(t('menu.openTerminal'), terminal, { disabled: missing }),
-      item(
-        pinnedHere ? t('tree.unpin') : t('tree.pin'),
-        () =>
-          pinnedHere
-            ? useQuickAccess.getState().unpin(path)
-            : useQuickAccess.getState().pin(path),
-      ),
+    )
+    // Drives can't be pinned (a pinned drive is just an empty row), but a
+    // drive pinned before this rule still needs its unpin escape hatch.
+    if (!isDriveRoot || pinnedHere) {
+      items.push(
+        item(
+          pinnedHere ? t('tree.unpin') : t('tree.pin'),
+          () =>
+            pinnedHere
+              ? useQuickAccess.getState().unpin(path)
+              : useQuickAccess.getState().pin(path),
+        ),
+      )
+    }
+  }
+  if (isNetRoot) {
+    items.push(
+      <div className="menu-sep" key="s4" />,
+      item(t('net.remove'), () => ws.removeNetworkLocation(path)),
     )
   }
 

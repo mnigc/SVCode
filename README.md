@@ -42,6 +42,9 @@ edit.**
 - Frameless title bar, three-pane layout with draggable splitters and collapsible panes
 - Lazily-loaded directory tree with 19 built-in SVG file-type icons
 - Multiple tabs, editor-group splitting (left/right/up/down), tab context menu with bulk close
+- Mount **network shares** (`\\NAS\share`, SMB) as top-level tree nodes — browse, edit, preview
+  and search NAS folders like local disks; mounts persist across restarts (File → Add Network
+  Location)
 
 ### ⌨️ CodeMirror 6 editing core
 - Syntax highlighting for C/C++, Rust, Go, Java, Python, JS/TS, HTML/CSS/Sass, Vue, PHP, SQL,

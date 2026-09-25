@@ -18,6 +18,8 @@ export interface SettingsValues {
   /** Initial view mode of NEW editor groups (split / open to the side);
    * existing groups keep their sticky per-group view. */
   defaultView: ViewPref
+  /** UNC paths (\\server\share…) mounted under 此电脑, Windows only. */
+  netLocations: string[]
 }
 
 export const DEFAULT_SETTINGS: SettingsValues = {
@@ -29,6 +31,7 @@ export const DEFAULT_SETTINGS: SettingsValues = {
   lineNumbers: true,
   showHidden: false,
   defaultView: 'both',
+  netLocations: [],
 }
 
 const PERSIST_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof SettingsValues)[]

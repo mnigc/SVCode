@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { ask } from '@tauri-apps/plugin-dialog'
-import { basename, dirname, extname, fileKind, joinPath, isRootPath, type FileKind } from '../lib/paths'
+import { basename, dirname, extname, fileKind, joinPath, isRootPath, normalizeUnc, type FileKind } from '../lib/paths'
 import { t, tBackend, tDriveName } from '../lib/i18n'
 import { useSettings } from '../lib/settings'
-import { DIR_ICON, PC_ICON, driveIcon, fileIcon } from '../lib/fileIcons'
+import { DIR_ICON, NET_ICON, PC_ICON, driveIcon, fileIcon } from '../lib/fileIcons'
 
 /** Stand-in tree root for 此电脑. No real path can collide with it. */
 export const THIS_PC = '<此电脑>'
@@ -137,6 +137,11 @@ interface WorkspaceState {
 
   loadSystemTree: () => Promise<void>
   retranslateRoots: () => void
+  /** Validate user input and mount a `\\server\share[\path]` location under
+   * 此电脑, persisting it. Throws a localized message on failure. */
+  addNetworkLocation: (raw: string) => Promise<void>
+  /** Unmount a network location: drop its subtree from the tree and settings. */
+  removeNetworkLocation: (path: string) => void
   toggleNode: (path: string) => Promise<void>
   openFile: (path: string) => Promise<void>
   /** Open `path` in a new group to the right of the active one. */
@@ -475,11 +480,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           return
         }
         const drives = await invoke<DriveInfo[]>('list_drives')
+        // Network locations (\\server\share) are TOP-LEVEL tree nodes beside
+        // 此电脑 (rendered by FileTree from settings), browsable like drives
+        // but removable.
+        const netLocs = useSettings.getState().netLocations
         const children = drives.map((d) => d.path)
         const nodes: Record<string, NodeInfo> = {
           [THIS_PC]: { ...node(THIS_PC, t('root.thisPC'), true), icon: PC_ICON, expanded: true, children },
         }
         for (const d of drives) nodes[d.path] = node(d.path, tDriveName(d.display), true)
+        for (const p of netLocs) nodes[p] = { ...node(p, p, true), icon: NET_ICON }
         set({ nodes })
       } catch (err) {
         // Without this the tree would sit at "loading" forever on a failed
@@ -507,6 +517,38 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         }
         return changed ? { nodes } : {}
       }),
+
+    addNetworkLocation: async (raw) => {
+      const p = normalizeUnc(raw)
+      if (!p) throw new Error(t('net.invalid'))
+      // Windows path comparison is case-insensitive; a re-add of an existing
+      // location is a no-op rather than a duplicate row.
+      const samePath = (c: string) => c.toLowerCase() === p.toLowerCase()
+      const pc = get().nodes[THIS_PC]
+      if (pc?.children?.some(samePath)) return
+      const ok = await invoke<boolean>('check_access', { path: p }).catch(() => false)
+      if (!ok) throw new Error(t('net.unreachable'))
+      const added = { ...node(p, p, true), icon: NET_ICON }
+      set((st) => ({ nodes: { ...st.nodes, [p]: added } }))
+      const cur = useSettings.getState().netLocations
+      useSettings.getState().patch({ netLocations: [...cur, p] })
+    },
+
+    removeNetworkLocation: (path) => {
+      void invoke('unwatch_dir', { path }).catch(() => {})
+      const lower = path.toLowerCase()
+      const prefix = lower + (path.endsWith('\\') ? '' : '\\')
+      set((s) => {
+        const nodes: Record<string, NodeInfo> = {}
+        for (const [k, v] of Object.entries(s.nodes)) {
+          const kl = k.toLowerCase()
+          if (kl !== lower && !kl.startsWith(prefix)) nodes[k] = v
+        }
+        return { nodes }
+      })
+      const cur = useSettings.getState().netLocations
+      useSettings.getState().patch({ netLocations: cur.filter((c) => c.toLowerCase() !== lower) })
+    },
 
     toggleNode: async (path) => {
       const current = get().nodes[path]

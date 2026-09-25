@@ -78,7 +78,7 @@ export function QuickAccess() {
           return (
             <div
               key={p}
-              className={`tree-row qa-row${gone ? ' is-missing' : ''}`}
+              className={`tree-row qa-row${gone ? ' is-missing' : ''}${menu?.path === p ? ' is-ctx-open' : ''}`}
               style={{ paddingLeft: 8 }}
               onClick={() => {
                 if (!gone) void reveal(p)

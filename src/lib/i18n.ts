@@ -183,6 +183,22 @@ const dict = {
   'tree.unpin': { zh: '从快速访问移除', en: 'Unpin from Quick Access' },
   'qa.missing': { zh: '文件夹不存在或无法访问', en: 'Folder is missing or inaccessible' },
   'qa.empty': { zh: '右键文件夹可固定到快速访问', en: 'Right-click a folder to pin it here' },
+  'net.add': { zh: '添加网络位置', en: 'Add Network Location' },
+  'net.remove': { zh: '移除网络位置', en: 'Remove Network Location' },
+  'net.title': { zh: '添加网络位置', en: 'Add Network Location' },
+  'net.placeholder': { zh: '\\\\服务器\\共享文件夹', en: '\\\\server\\share' },
+  'net.hint': {
+    zh: '输入共享文件夹的 UNC 路径，如 \\\\NAS\\media 或 \\\\NAS\\media\\项目',
+    en: 'Enter the UNC path of a shared folder, e.g. \\\\NAS\\media\\projects',
+  },
+  'net.invalid': {
+    zh: '路径格式无效：需要 \\\\服务器\\共享名 形式的 UNC 路径',
+    en: 'Invalid path: expected a UNC path like \\\\server\\share',
+  },
+  'net.unreachable': {
+    zh: '无法访问该路径，请检查服务器名、共享名和凭据',
+    en: 'Cannot reach this path — check the server, share name and credentials',
+  },
   'dialog.cancel': { zh: '取消', en: 'Cancel' },
   'dialog.close': { zh: '关闭', en: 'Close' },
 

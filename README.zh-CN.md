@@ -39,6 +39,8 @@
 - 无边框标题栏，三栏布局可拖拽分割、可折叠
 - 文件树懒加载目录，内置 19 种文件类型 SVG 图标
 - 多标签、编辑器组拆分（左右上下），标签右键批量关闭
+- 可挂载**网络共享文件夹**（`\\NAS\share`，SMB）为顶层节点——像本地磁盘一样浏览、编辑、
+  预览、搜索 NAS 目录，重启后保留（文件 → 添加网络位置）
 
 ### ⌨️ CodeMirror 6 编辑内核
 - 语法高亮：C/C++、Rust、Go、Java、Python、JS/TS、HTML/CSS/Sass、Vue、PHP、SQL、YAML、XML、Markdown 等

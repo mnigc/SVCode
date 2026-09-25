@@ -14,6 +14,7 @@ import { basename, extname } from './paths'
 
 export const DIR_ICON = '<dir>'
 export const PC_ICON = '<pc>'
+export const NET_ICON = '<net>'
 export const driveIcon = (path: string) => `path:${path}`
 
 /** Extensions that deserve a specific icon even though they carry no dot. */
@@ -187,6 +188,7 @@ const FILE = (): IconLook => ({ glyph: 'file', color: 'var(--icon-file)' })
 export function resolveSpec(spec: string, expanded = false): IconLook {
   if (spec === DIR_ICON) return expanded ? FOLDER_OPEN() : FOLDER()
   if (spec === PC_ICON) return { glyph: 'pc', color: 'var(--accent)' }
+  if (spec === NET_ICON) return { glyph: 'network', color: 'var(--accent)' }
   if (spec.startsWith('path:')) return { glyph: 'drive', color: 'var(--accent)' }
   if (spec.startsWith('ext:')) return EXT_ICONS[spec.slice(4)] ?? FILE()
   return FILE()
@@ -264,6 +266,23 @@ export const glyphs = {
       <path fill="currentColor" d="M7.4 12.2h1.2v1.1H7.4z" />
       <rect fill="currentColor" x="5.4" y="12.9" width="5.2" height="1.4" rx="0.7" />
       <path stroke="#fff" strokeWidth="1.4" strokeLinecap="round" d="M4.9 6.6h6.2" />
+    </>
+  ),
+  network: (
+    <>
+      {/* Two linked machines — reads as "network" at 14px where a globe's
+          meridians turn to mush. Same solid-accent family as pc/drive. */}
+      <rect fill="currentColor" x="7.4" y="2.2" width="6.8" height="4.8" rx="1.1" />
+      <rect fill="#fff" opacity={0.55} x="9.2" y="5.2" width="3.2" height="0.85" rx="0.42" />
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeLinecap="round"
+        d="M10.8 7v1.6H5.7v.8"
+      />
+      <rect fill="currentColor" x="1.8" y="8.6" width="7.8" height="5.2" rx="1.2" />
+      <rect fill="#fff" opacity={0.55} x="3.4" y="12.1" width="4.6" height="0.85" rx="0.42" />
     </>
   ),
   code: (

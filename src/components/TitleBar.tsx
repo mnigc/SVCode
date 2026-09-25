@@ -5,6 +5,7 @@ import { useSettings, type ThemeName } from '../lib/settings'
 import { useT, type TextKey } from '../lib/i18n'
 import { AboutDialog } from './AboutDialog'
 import { SettingsDialog } from './SettingsDialog'
+import { NetworkLocationDialog } from './NetworkLocationDialog'
 import logoUrl from '../assets/logo.png'
 
 interface MenuEntry {
@@ -25,6 +26,7 @@ export function TitleBar() {
   const [aboutOpen, setAboutOpen] = useState(false)
   const [checkSeq, setCheckSeq] = useState(0)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [netDialogOpen, setNetDialogOpen] = useState(false)
 
   // Global shortcut: Ctrl+, opens Settings (works even when the editor has
   // focus — it's a key the editor never uses).
@@ -81,6 +83,10 @@ export function TitleBar() {
         hint: 'Ctrl+`',
         onSelect: () => void useWorkspace.getState().openInTerminal(),
         disabled: !useWorkspace.getState().selectedDir,
+      },
+      {
+        label: t('net.add'),
+        onSelect: () => setNetDialogOpen(true),
       },
       { separator: true },
       {
@@ -228,6 +234,7 @@ export function TitleBar() {
 
     <AboutDialog open={aboutOpen} checkSeq={checkSeq} onClose={() => setAboutOpen(false)} />
     <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+    {netDialogOpen && <NetworkLocationDialog onClose={() => setNetDialogOpen(false)} />}
     </>
   )
 }
