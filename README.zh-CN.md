@@ -29,7 +29,7 @@
 改一个配置文件、看一眼日志、快速编辑一段脚本、顺手翻一份文档 —— 打开完整 IDE 太重，
 记事本又太糙。SVCode 的定位就是中间这块：**秒级启动，打开即所见，改完即保存。**
 
-- 秒启动，安装包约 10MB，单实例内存约 100MB
+- 秒启动，安装包**不到 3MB**，单实例内存约 100MB
 - 不选工作区、不扫文件夹：启动即见**整个磁盘**的文件树
 - 需要补全、LSP、插件系统时，请用完整 IDE；SVCode 只做「快开、快看、快改」
 
@@ -66,10 +66,11 @@
 
 ## 下载安装
 
-到 [**Releases**](https://github.com/mnigc/SVCode/releases/latest) 下载最新安装包：
+到 [**Releases**](https://github.com/mnigc/SVCode/releases/latest) 下载最新安装包 ——
+整个编辑器比一张照片还小：
 
-- `SVCode_x.y.z_x64-setup.exe` — NSIS 安装程序（推荐）
-- `SVCode_x.y.z_x64_en-US.msi` — MSI 安装包
+- `SVCode_x.y.z_x64-setup.exe` — NSIS 安装程序，**仅约 2.6 MB**（推荐）
+- `SVCode_x.y.z_x64_en-US.msi` — MSI 安装包，**仅约 3.2 MB**
 
 要求：Windows 10 及以上（自带 WebView2 渲染）。
 
