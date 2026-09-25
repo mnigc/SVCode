@@ -1,18 +1,30 @@
-import { useIcons } from '../store/icons'
+import { glyphs, resolveSpec } from '../lib/fileIcons'
 
-/** A shell icon fetched from Rust; the spacer keeps rows from jumping while it loads. */
-export function NodeIcon({ spec, size = 16 }: { spec: string; size?: number }) {
-  const url = useIcons((s) => s.urls[spec])
-  return url ? (
-    <img
+/**
+ * Synchronous built-in SVG icon for a tree row or tab. `expanded` only
+ * affects folders (open vs closed glyph). Glyphs carry their own
+ * fill/stroke; `color` tints the silhouette via currentColor.
+ */
+export function NodeIcon({
+  spec,
+  size = 16,
+  expanded = false,
+}: {
+  spec: string
+  size?: number
+  expanded?: boolean
+}) {
+  const { glyph, color } = resolveSpec(spec, expanded)
+  return (
+    <svg
       className="node-icon"
-      src={url}
       width={size}
       height={size}
-      alt=""
-      draggable={false}
-    />
-  ) : (
-    <span className="node-icon is-blank" style={{ width: size, height: size }} />
+      viewBox="0 0 16 16"
+      style={{ color }}
+      aria-hidden
+    >
+      {glyphs[glyph]}
+    </svg>
   )
 }

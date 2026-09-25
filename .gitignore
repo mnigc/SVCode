@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# UI-test sample fixtures (regenerate with scripts/gen-office-samples.mjs)
+public/uitest

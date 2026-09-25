@@ -1,8 +1,36 @@
-export type FileKind = 'text' | 'markdown' | 'image' | 'pdf'
+import { t } from './i18n'
+
+export type FileKind =
+  | 'text'
+  | 'markdown'
+  | 'image'
+  | 'pdf'
+  | 'office'
+  | 'binary'
 
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif', 'tiff'])
 const MARKDOWN_EXT = new Set(['md', 'markdown', 'mdown', 'mkd', 'mdx'])
 const PDF_EXT = new Set(['pdf'])
+// OOXML only; the legacy binary formats (.doc/.xls/.ppt) have no usable
+// pure-JS parser and stay unhandled.
+const OFFICE_EXT = new Set(['docx', 'xlsx', 'pptx'])
+// Extensions known to be binary/data files: never attempt a text read, show
+// the "open with default app" card instead. Unknown extensions still go
+// through the text path and are caught by the NUL-byte probe.
+const BINARY_EXT = new Set([
+  // archives / disk images
+  'zip', '7z', 'rar', 'tar', 'gz', 'bz2', 'xz', 'zst', 'iso', 'cab', 'vmdk',
+  // executables / libraries / build output
+  'exe', 'dll', 'sys', 'msi', 'apk', 'jar', 'class', 'so', 'dylib', 'bin', 'o', 'obj', 'a', 'lib', 'pdb',
+  // legacy Office (binary formats, no JS parser — open externally)
+  'doc', 'dot', 'docm', 'xls', 'xlt', 'xlsm', 'ppt', 'pot', 'pptm',
+  // media
+  'mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac', 'mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm',
+  // fonts
+  'ttf', 'otf', 'woff', 'woff2', 'eot',
+  // databases / data / design
+  'db', 'sqlite', 'sqlite3', 'dat', 'psd', 'ai', 'sketch', 'blend', 'fbx', 'glb', 'pcap',
+])
 
 // svg is treated as text so it opens editable; the preview pane renders it separately.
 const TEXT_EXT = new Set([
@@ -23,10 +51,22 @@ const TEXT_BASENAMES = new Set([
   '.profile', '.condarc',
 ])
 
+/** Size of the text-extension whitelist, for the "supported formats" copy. */
+export const TEXT_EXT_SIZE = TEXT_EXT.size
+
 export function basename(path: string): string {
   const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
   return i < 0 ? path : path.slice(i + 1)
 }
+
+/** Join a directory and a name respecting the path's own separator. */
+export function joinPath(dir: string, name: string): string {
+  if (/[/\\]$/.test(dir)) return dir + name
+  return dir + (dir.includes('\\') ? '\\' : '/') + name
+}
+
+/** True for drive roots (`C:\`) and `/`. */
+export const isRootPath = (path: string) => /^[a-zA-Z]:[\\/]$/.test(path) || path === '/'
 
 export function dirname(path: string): string {
   const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
@@ -49,14 +89,26 @@ export function fileKind(path: string): FileKind {
   if (PDF_EXT.has(ext)) return 'pdf'
   if (IMAGE_EXT.has(ext)) return 'image'
   if (MARKDOWN_EXT.has(ext)) return 'markdown'
+  if (OFFICE_EXT.has(ext)) return 'office'
+  if (BINARY_EXT.has(ext)) return 'binary'
   if (TEXT_EXT.has(ext) || TEXT_BASENAMES.has(base)) return 'text'
   // Unknown extensions are opened as text; binary content is caught by the NUL-byte probe.
   return 'text'
 }
 
-export const KIND_LABEL: Record<FileKind, string> = {
-  text: '文本',
-  markdown: 'Markdown',
-  image: '图片',
-  pdf: 'PDF',
+export function kindLabel(kind: FileKind): string {
+  switch (kind) {
+    case 'text':
+      return t('kind.text')
+    case 'markdown':
+      return 'Markdown'
+    case 'image':
+      return t('kind.image')
+    case 'pdf':
+      return 'PDF'
+    case 'office':
+      return t('kind.office')
+    case 'binary':
+      return t('kind.binary')
+  }
 }

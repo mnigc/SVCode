@@ -1,62 +1,87 @@
-import { activeTab, useWorkspace } from '../store/workspace'
-import { KIND_LABEL } from '../lib/paths'
+import { useWorkspace, flatGroups } from '../store/workspace'
+import { useT } from '../lib/i18n'
+import { CodeEditor } from './CodeEditor'
+import { ImageViewer } from './ImageViewer'
+import { OfficeViewer } from './OfficeViewer'
+import { PdfViewer } from './PdfViewer'
+import { UnsupportedCard } from './UnsupportedCard'
 
-export function EditorPane() {
-  const tab = useWorkspace(activeTab)
-  const editActive = useWorkspace((s) => s.editActive)
+/** The editor area of ONE group: its active tab, or the welcome card. */
+export function EditorPane({ groupId }: { groupId: number }) {
+  const t = useT()
+  const activeGroup = useWorkspace((s) => s.activeGroup)
+  const hasSiblings = useWorkspace((s) => flatGroups(s.rows).length > 1)
+  const tab = useWorkspace((s) => {
+    const active = s.groupActive[groupId]
+    return s.tabs.find((t) => t.group === groupId && t.path === active) ?? null
+  })
 
   if (!tab) {
     return (
       <div className="welcome">
+        <div className="welcome-logo">
+          <svg width="30" height="30" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M5.4 4.6 2 8l3.4 3.4M10.6 4.6 14 8l-3.4 3.4" />
+          </svg>
+        </div>
         <h1>SVCode</h1>
-        <p className="welcome-sub">轻量文本 / 代码编辑器，内置 md、图片、PDF 预览</p>
-        <p className="welcome-sub">从左侧「此电脑」里挑一个文件开始。</p>
+        <p className="welcome-sub">{t('welcome.tagline')}</p>
+        <p className="welcome-sub">{t('welcome.start')}</p>
         <ul className="welcome-keys">
           <li>
             <kbd>Ctrl</kbd>
-            <kbd>W</kbd> <span>关闭当前标签</span>
+            <kbd>F</kbd> <span>{t('welcome.find')}</span>
           </li>
           <li>
             <kbd>Ctrl</kbd>
-            <kbd>S</kbd> <span>保存</span>
+            <kbd>S</kbd> <span>{t('welcome.save')}</span>
           </li>
           <li>
             <kbd>Ctrl</kbd>
-            <kbd>B</kbd> <span>切换侧栏</span>
+            <kbd>B</kbd> <span>{t('welcome.sidebar')}</span>
           </li>
           <li>
             <kbd>Ctrl</kbd>
             <kbd>Shift</kbd>
-            <kbd>V</kbd> <span>切换预览</span>
+            <kbd>V</kbd> <span>{t('welcome.preview')}</span>
+          </li>
+          <li>
+            <kbd>Ctrl</kbd>
+            <kbd>\</kbd> <span>{t('welcome.split')}</span>
           </li>
         </ul>
+        {hasSiblings && (
+          <button className="welcome-close" onClick={() => void useWorkspace.getState().closeGroup(groupId)}>
+            {t('group.close')}
+          </button>
+        )}
       </div>
     )
   }
 
-  if (tab.kind === 'image' || tab.kind === 'pdf') {
-    return (
-      <div className="pane-placeholder">
-        <p>
-          <code>{tab.name}</code> 是 {KIND_LABEL[tab.kind]}，预览能力在 M3 接入。
-        </p>
-      </div>
-    )
+  if (tab.kind === 'image') {
+    return <ImageViewer path={tab.path} name={tab.name} isActive={groupId === activeGroup} />
   }
 
-  if (tab.loading) return <div className="pane-placeholder">读取中…</div>
-  if (tab.error) return <div className="pane-error">{tab.error}</div>
+  if (tab.kind === 'pdf') {
+    return <PdfViewer path={tab.path} isActive={groupId === activeGroup} />
+  }
+
+  if (tab.kind === 'office') {
+    return <OfficeViewer path={tab.path} isActive={groupId === activeGroup} />
+  }
+
+  if (tab.kind === 'binary') {
+    return <UnsupportedCard tab={tab} />
+  }
+
+  if (tab.loading) return <div className="pane-placeholder">{t('pane.loading')}</div>
+  if (tab.error) return <UnsupportedCard tab={tab} error={tab.error} />
 
   return (
-    <div className="editor-m0">
-      {tab.readOnly && <div className="banner">文件超过 5MB，已按只读打开。</div>}
-      <textarea
-        className="editor-m0-area"
-        value={tab.text}
-        readOnly={tab.readOnly}
-        spellCheck={false}
-        onChange={(e) => editActive(e.target.value)}
-      />
+    <div className="editor-pane">
+      {tab.readOnly && <div className="banner">{t('pane.readonly')}</div>}
+      <CodeEditor tab={tab} group={groupId} active={groupId === activeGroup} />
     </div>
   )
 }

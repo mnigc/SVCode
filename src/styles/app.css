@@ -1,85 +1,165 @@
+/* ===================================================================
+   Layout: one continuous surface for the top bar + sidebar, with the
+   editor/preview area floating as a rounded card on top of it.
+   =================================================================== */
+
 .app {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  background: var(--bg);
 }
 
-.panes {
+.workbench {
   display: flex;
   flex: 1;
   min-height: 0;
 }
 
-.pane-sidebar,
-.pane-preview {
+/* Collapsible side panes: width + fade transition; the inner layer keeps a
+   fixed width so content clips instead of reflowing while animating. */
+.pane-anim {
   flex: 0 0 auto;
   min-width: 0;
   overflow: hidden;
+  opacity: 0;
+  transition:
+    width 200ms cubic-bezier(0.2, 0.7, 0.3, 1),
+    opacity 170ms ease;
 }
 
-.pane-editor {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  background: var(--bg);
+.pane-anim.is-open {
+  opacity: 1;
 }
 
-.splitter {
-  flex: 0 0 var(--splitter-hit);
-  width: var(--splitter-hit);
-  margin: 0 calc(var(--splitter-hit) / -2);
-  z-index: 2;
-  cursor: col-resize;
-  background: transparent;
-  transition: background 120ms;
+/* While a splitter drag is in progress, width must track the pointer
+   directly — the open/close transition would make the pane lag each frame
+   and its edge oscillate. */
+.pane-resizing .pane-anim {
+  transition: none;
 }
 
-.splitter:hover,
-.splitter:active {
-  background: color-mix(in srgb, var(--accent) 55%, transparent);
+.pane-anim-inner {
+  height: 100%;
 }
 
-/* ---------- title bar ---------- */
+/* ---------- top bar (integrated with the sidebar below it) ---------- */
 
 .titlebar {
   display: flex;
   align-items: center;
+  gap: 4px;
   height: var(--caption-h);
   flex: 0 0 auto;
-  padding-left: 12px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  padding-left: 8px;
   color: var(--fg-dim);
   user-select: none;
 }
 
-.titlebar-brand {
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px 0 4px;
+  font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: var(--fg);
 }
 
-.titlebar-file {
-  margin-left: 10px;
-  max-width: 45vw;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.brand svg {
+  color: var(--accent);
+}
+
+.topbar-menu {
+  position: relative;
+}
+
+.topbar-menu-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.topbar-menu-btn:hover,
+.topbar-menu-btn.is-open {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.menu-panel {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  z-index: 100;
+  min-width: 210px;
+  padding: 5px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-menu);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--fg);
+  text-align: left;
+  /* Label spans flex to push the hint right; nowrap keeps 切换预览面板 etc.
+     on one line (the panel grows instead of wrapping). */
   white-space: nowrap;
+}
+
+.menu-label {
+  flex: 1;
+}
+
+.menu-check {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  flex: 0 0 14px;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.menu-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.menu-item:disabled {
+  color: var(--fg-faint);
+  cursor: default;
+}
+
+.menu-hint {
+  font-size: 11px;
   color: var(--fg-faint);
 }
 
-.titlebar-spacer {
-  flex: 1;
-  height: 100%;
+.menu-sep {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--border);
+}
+
+.menu-panel.is-right {
+  left: auto;
+  right: 0;
 }
 
 .caption-buttons {
   display: flex;
   align-self: stretch;
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .caption {
@@ -99,14 +179,18 @@
   color: #fff;
 }
 
-/* ---------- sidebar ---------- */
+/* ---------- sidebar (shares --bg with the top bar) ---------- */
+
+.pane-sidebar {
+  display: flex;
+  flex-direction: column;
+}
 
 .sidebar {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--bg-panel);
-  border-right: 1px solid var(--border);
+  width: 100%;
 }
 
 .sidebar-head {
@@ -114,18 +198,16 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  height: var(--caption-h);
-  padding: 0 8px 0 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 10px 10px 6px 14px;
   flex: 0 0 auto;
 }
 
 .sidebar-title {
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--fg-dim);
+  color: var(--fg-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -135,23 +217,25 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 4px 0 16px;
+  padding: 0 8px 12px;
 }
 
 .tree-empty {
-  padding: 12px 14px;
+  padding: 10px 14px;
   color: var(--fg-faint);
 }
 
 .tree-row {
   display: flex;
   align-items: center;
-  gap: 5px;
-  height: 23px;
+  gap: 7px;
+  height: 27px;
   padding-right: 8px;
+  border-radius: 7px;
   cursor: default;
   white-space: nowrap;
   overflow: hidden;
+  transition: background 100ms;
 }
 
 .tree-row:hover {
@@ -160,12 +244,20 @@
 
 .tree-row.is-selected {
   background: var(--bg-active);
+}
+
+.tree-row.is-selected .node-name {
   color: var(--fg);
 }
 
+/* The folder holding the active file (or last clicked): tinted name instead
+   of a background, so the full selection highlight stays with the file. */
+.tree-row.is-dir-active .node-name {
+  color: var(--accent);
+}
+
 .tree-note {
-  height: 20px;
-  line-height: 20px;
+  padding: 2px 0 2px 26px;
   font-size: 11px;
   color: var(--danger);
   opacity: 0.75;
@@ -174,10 +266,47 @@
   text-overflow: ellipsis;
 }
 
+/* No-permission directories: faded row + blocked cursor. */
+.tree-row.is-denied {
+  cursor: not-allowed;
+}
+
+.tree-row.is-denied .node-icon,
+.tree-row.is-denied .node-name {
+  opacity: 0.4;
+}
+
+.tree-row.is-denied:hover {
+  background: transparent;
+}
+
+.tree-row.is-denied .chevron {
+  opacity: 0.25;
+}
+
+.rename-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--fg);
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 4px;
+  outline: none;
+  user-select: text;
+}
+
+.ctx-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 170px;
+}
+
 .node-icon {
   flex: 0 0 auto;
   display: block;
-  object-fit: contain;
 }
 
 .node-name {
@@ -191,25 +320,27 @@
 }
 
 .chevron {
-  flex: 0 0 12px;
-  width: 12px;
-  height: 12px;
-  position: relative;
-  transition: transform 100ms ease;
+  flex: 0 0 13px;
+  width: 13px;
+  height: 13px;
+  color: var(--fg-faint);
 }
 
 .chevron::before {
   content: '';
-  position: absolute;
-  left: 3px;
-  top: 3px;
-  border-left: 4px solid var(--fg-faint);
-  border-top: 3px solid transparent;
-  border-bottom: 3px solid transparent;
+  display: block;
+  margin: 4px auto 0;
+  width: 5px;
+  height: 5px;
+  border-right: 1.4px solid currentColor;
+  border-bottom: 1.4px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 110ms ease;
 }
 
-.chevron.is-open {
-  transform: rotate(90deg);
+.chevron.is-open::before {
+  transform: rotate(45deg);
+  margin-top: 3px;
 }
 
 .chevron.is-hidden::before {
@@ -220,34 +351,264 @@
   color: var(--fg-faint);
 }
 
+/* Expand/collapse: the rows live in a 0fr↔1fr grid row, so the height
+   animates without measuring content. */
+.tree-children {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 170ms ease;
+}
+
+.tree-children.is-open {
+  grid-template-rows: 1fr;
+}
+
+.tree-children > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---------- splitter ---------- */
+
+.splitter {
+  flex: 0 0 var(--splitter-hit);
+  width: var(--splitter-hit);
+  margin: 0 calc(var(--splitter-hit) / -2);
+  z-index: 2;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 120ms;
+}
+
+.splitter:hover,
+.splitter:active {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* ---------- main card (editor + preview) ---------- */
+
+.pane-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  margin: 6px 8px 6px 0;
+}
+
+/* Each editor group is its own floating card, rounded on every corner and
+   kept clear of the global statusbar by the pane's bottom margin; groups
+   are separated by a small gap the group splitter sits in. */
+.pane-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+/* Focused-group cue: accent-tinted border (shown only when several groups
+   exist — App skips the class for a single group). */
+.pane-editor.is-active {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+/* Editor area: rows stack top to bottom, each row holds its groups left to
+   right (split up/down creates rows, split left/right creates groups). */
+.editor-rows {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.editor-row {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* One row of editor groups; each .pane-editor flexes to its stored grow
+   share. The gap IS the splitter: .group-splitter is a 6px transparent strip
+   that highlights on hover — no extra gap, so spacing is exactly 6px. */
+.editor-groups {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.group-splitter {
+  flex: 0 0 6px;
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 120ms;
+}
+
+.group-splitter:hover,
+.group-splitter:active {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* Horizontal counterpart between two rows. */
+.row-splitter {
+  flex: 0 0 6px;
+  height: 6px;
+  cursor: row-resize;
+  background: transparent;
+  transition: background 120ms;
+}
+
+.row-splitter:hover,
+.row-splitter:active {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* One group's content row: editor + that group's own preview pane.
+   min-height: 0 is load-bearing — without it the row grows to the editor's
+   content height and the CodeMirror scroller never overflows (no scrollbar). */
+.group-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Full-pane overlays (unsupported card) must stretch across the row so their
+   inner centering wrapper actually centers within the group. */
+.group-body > .unsupported {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Per-group info strip at the bottom of each card: mirrors the global
+   statusbar's file cells for the group's own active tab. */
+.group-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 0 0 auto;
+  height: var(--statusbar-h);
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+  font-size: 11.5px;
+  color: var(--fg-faint);
+  overflow: hidden;
+}
+
+.pane-preview {
+  min-width: 0;
+}
+
 /* ---------- tabs ---------- */
 
 .tabstrip {
   display: flex;
   align-items: stretch;
+  position: relative;
   height: var(--tabbar-h);
   flex: 0 0 auto;
-  background: var(--bg-panel);
+  padding: 0 4px 0 8px;
   border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  scrollbar-width: thin;
 }
 
-.tabstrip.is-empty {
-  border-bottom: 1px solid var(--border);
+/* Overflow scroller with the native scrollbar fully hidden — it would eat
+   layout height and squash the tabs. A custom overlay thumb (below) shows
+   the scroll position instead. */
+.tabstrip-scroll {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.tabstrip-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Overlay scroll indicator: a 4px thumb inside an 8px invisible hit strip
+   (so it stays easy to grab without growing visually). Track press jumps,
+   thumb press drags. */
+.tabstrip-scrollbar {
+  position: absolute;
+  left: 8px;
+  right: 36px;
+  bottom: 0;
+  height: 8px;
+  cursor: pointer;
+}
+
+.tabstrip-scrollbar:active {
+  cursor: grabbing;
+}
+
+.tabstrip-scrollbar-thumb {
+  position: absolute;
+  top: 2px;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--fg-faint) 40%, transparent);
+  transition: background 120ms;
+}
+
+.tabstrip-scrollbar:hover .tabstrip-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fg-faint) 60%, transparent);
+}
+
+.tabstrip-scrollbar:active .tabstrip-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fg-faint) 80%, transparent);
+}
+
+.tabstrip-more {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: 2px;
+}
+
+/* The strip stretches its children; the standalone split button would pin to
+   the top edge while the … button centers inside its wrapper. Center both. */
+.tabstrip > .tab-more-btn {
+  align-self: center;
+}
+
+.tab-more-btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--fg-dim);
+  transition: background 100ms;
+}
+
+.tab-more-btn:hover,
+.tab-more-btn.is-open {
+  background: var(--bg-hover);
+  color: var(--fg);
 }
 
 .tab {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   padding: 0 8px 0 11px;
-  border-right: 1px solid var(--border);
-  background: var(--bg-panel);
+  margin: 5px 0;
+  border-radius: 8px;
   color: var(--fg-dim);
   cursor: default;
   white-space: nowrap;
   max-width: 220px;
+  transition: background 100ms;
 }
 
 .tab:hover {
@@ -255,9 +616,8 @@
 }
 
 .tab.is-active {
-  background: var(--bg);
+  background: var(--bg-active);
   color: var(--fg);
-  box-shadow: inset 0 2px 0 var(--accent);
 }
 
 .tab-name {
@@ -276,55 +636,41 @@
 }
 
 .tab-close {
-  width: 16px;
-  height: 16px;
-  line-height: 14px;
-  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
   color: var(--fg-faint);
   font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 100ms;
+}
+
+.tab:hover .tab-close,
+.tab.is-active .tab-close,
+.tab-dirty.is-on + .tab-close {
+  opacity: 1;
 }
 
 .tab-close:hover {
-  background: var(--bg-active);
+  background: color-mix(in srgb, var(--fg) 14%, transparent);
   color: var(--fg);
 }
 
-/* ---------- editor (M0 placeholder) ---------- */
-
-.editor-m0 {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.editor-m0-area {
-  flex: 1;
-  width: 100%;
-  resize: none;
-  border: 0;
-  outline: none;
-  padding: 10px 14px;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.6;
-  tab-size: 2;
-  user-select: text;
-}
+/* ---------- editor ---------- */
 
 .banner {
-  padding: 5px 14px;
-  background: color-mix(in srgb, var(--warn) 18%, var(--bg));
+  padding: 5px 16px;
+  background: color-mix(in srgb, var(--warn) 14%, var(--bg-card));
   color: var(--warn);
   font-size: 12px;
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
 
-.pane-placeholder,
-.pane-error {
+.pane-placeholder {
   display: grid;
   place-items: center;
   flex: 1;
@@ -334,16 +680,7 @@
   line-height: 2;
 }
 
-.pane-error {
-  color: var(--danger);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  align-items: start;
-  justify-items: start;
-  text-align: left;
-  overflow: auto;
-  user-select: text;
-}
+/* ---------- welcome ---------- */
 
 .welcome {
   display: flex;
@@ -351,40 +688,77 @@
   align-items: center;
   justify-content: center;
   flex: 1;
-  gap: 6px;
+  gap: 4px;
   color: var(--fg-dim);
+}
+
+.welcome-logo {
+  display: grid;
+  place-items: center;
+  width: 62px;
+  height: 62px;
+  margin-bottom: 16px;
+  border-radius: 16px;
+  color: var(--accent-fg);
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #8a5cf6));
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .welcome h1 {
   margin: 0;
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   color: var(--fg);
 }
 
 .welcome-sub {
-  margin: 0 0 18px;
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--fg-faint);
 }
 
 .welcome-keys {
   list-style: none;
-  margin: 22px 0 0;
+  margin: 26px 0 0;
   padding: 0;
   display: grid;
-  gap: 7px;
+  grid-template-columns: repeat(2, minmax(0, 220px));
+  gap: 8px;
   font-size: 12px;
-  color: var(--fg-faint);
+  color: var(--fg-dim);
 }
 
 .welcome-keys li {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-raised);
 }
 
 .welcome-keys li span {
-  margin-left: 8px;
+  margin-left: auto;
+  color: var(--fg-faint);
+}
+
+/* Close button on an empty group's welcome card (关闭此分组). */
+.welcome-close {
+  margin-top: 18px;
+  padding: 5px 14px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg-dim);
+  background: var(--bg-raised);
+  transition: color 120ms, border-color 120ms;
+}
+
+.welcome-close:hover {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
 }
 
 /* ---------- preview ---------- */
@@ -393,7 +767,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--bg-panel);
+  background: var(--bg-raised);
   border-left: 1px solid var(--border);
 }
 
@@ -401,14 +775,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--caption-h);
-  padding: 0 8px 0 12px;
+  height: var(--tabbar-h);
+  padding: 0 8px 0 14px;
   border-bottom: 1px solid var(--border);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--fg-dim);
+  color: var(--fg-faint);
   flex: 0 0 auto;
 }
 
@@ -416,10 +790,11 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 14px;
+  padding: 14px 16px;
 }
 
 .preview-hint {
+  margin: 4px 0;
   color: var(--fg-faint);
   line-height: 1.9;
 }
@@ -429,13 +804,12 @@
 .statusbar {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   height: var(--statusbar-h);
   flex: 0 0 auto;
-  padding: 0 12px;
-  background: var(--bg-panel);
-  border-top: 1px solid var(--border);
-  font-size: 11px;
+  padding: 0 14px;
+  background: var(--bg);
+  font-size: 11.5px;
   color: var(--fg-faint);
   overflow: hidden;
 }
@@ -452,12 +826,718 @@
 }
 
 .status-error {
-  background: none;
+  color: var(--warn);
+}
+
+.status-error:hover {
+  text-decoration: underline;
+}
+
+/* Office preview-accuracy note (moved here from the viewer footers). */
+.status-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg-dim);
+}
+
+.status-note svg {
+  flex: 0 0 auto;
+  opacity: 0.7;
+  /* The CJK text's visual mass sits slightly low in its line box; without
+     this the icon reads as riding high against it. */
+  transform: translateY(0.5px);
+}
+
+/* − %/＋ zoom controls living in the group info strip. */
+.status-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
+/* 编辑 / 双栏 / 预览 switcher for previewable files (group status strip). */
+.viewmode {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+}
+
+.viewmode .btn-icon {
+  width: 24px;
+  height: 20px;
+  border-radius: 6px;
+}
+
+.viewmode .btn-icon.is-active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* Preview-only view: the preview pane IS the group body. */
+.group-body > .preview {
+  flex: 1;
+  min-width: 0;
+}
+
+.status-zoom .btn-icon {
+  width: 20px;
+  height: 20px;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.status-zoom .btn-icon:hover {
+  color: var(--fg);
+}
+
+.status-zoom-label {
+  min-width: 42px;
+  padding: 0 4px;
+  height: 20px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-dim);
+  text-align: center;
+}
+
+.status-zoom-label:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+/* ---------- search panel (M5) ---------- */
+
+.search-panel {
+  flex: 0 0 auto;
+  padding: 0 8px 4px;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--fg-faint);
+}
+
+.search-box:focus-within {
+  border-color: var(--accent);
+}
+
+.search-box input {
+  flex: 1;
+  min-width: 0;
   border: 0;
-  padding: 0;
+  outline: 0;
+  background: none;
   font: inherit;
-  color: var(--danger);
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+.search-box input::placeholder {
+  color: var(--fg-faint);
+}
+
+.search-clear {
+  width: 18px;
+  height: 18px;
+  font-size: 13px;
+}
+
+.search-status {
+  padding: 5px 8px 0;
+  font-size: 11px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-results {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  outline: none;
+}
+
+.search-window {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding: 0 8px;
+  border-radius: 7px;
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.search-row:hover,
+.search-row.is-selected {
+  background: var(--bg-hover);
+}
+
+.search-row.is-selected {
+  background: var(--bg-active);
+}
+
+.search-name {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg);
+}
+
+.search-name mark {
+  background: color-mix(in srgb, var(--warn) 45%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.search-dir {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+
+.search-empty {
+  padding-left: 10px;
+  color: var(--fg-faint);
+}
+
+/* ---------- CodeMirror host (M1) ---------- */
+
+.editor-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.code-editor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.code-editor .cm-editor {
+  height: 100%;
+}
+
+.code-editor .cm-scroller {
+  overflow: auto;
+}
+
+/* ---------- markdown preview (M2) ---------- */
+
+/* Own scroller so the sync logic drives one predictable element. */
+.md-scroll {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  margin: -14px -16px;
+  padding: 14px 16px;
+}
+
+.md-body {
+  color: var(--fg);
+  font-size: 13.5px;
+  line-height: 1.75;
+  word-wrap: break-word;
+  user-select: text;
+}
+
+.md-body > :first-child {
+  margin-top: 0;
+}
+
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4,
+.md-body h5,
+.md-body h6 {
+  margin: 1.4em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--fg);
+}
+
+.md-body h1 {
+  font-size: 1.7em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.25em;
+}
+
+.md-body h2 {
+  font-size: 1.4em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.2em;
+}
+
+.md-body h3 {
+  font-size: 1.2em;
+}
+
+.md-body h4 {
+  font-size: 1.05em;
+}
+
+.md-body p {
+  margin: 0.6em 0;
+}
+
+.md-body a {
+  color: var(--md-link);
+  text-decoration: none;
+}
+
+.md-body a:hover {
+  text-decoration: underline;
+}
+
+.md-body ul,
+.md-body ol {
+  margin: 0.6em 0;
+  padding-left: 1.6em;
+}
+
+.md-body li {
+  margin: 0.2em 0;
+}
+
+.md-body li input[type='checkbox'] {
+  margin-right: 0.4em;
+  accent-color: var(--accent);
+}
+
+.md-body blockquote {
+  margin: 0.8em 0;
+  padding: 0.1em 1em;
+  border-left: 3px solid var(--border-strong);
+  color: var(--md-quote);
+}
+
+.md-body code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--md-code-bg);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+
+.md-body pre {
+  margin: 0.8em 0;
+  padding: 10px 12px;
+  background: var(--md-code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: auto;
+}
+
+.md-body pre code {
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.md-body table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  display: block;
+  overflow: auto;
+  max-width: 100%;
+}
+
+.md-body th,
+.md-body td {
+  border: 1px solid var(--border-strong);
+  padding: 5px 10px;
+}
+
+.md-body th {
+  background: var(--bg-raised);
+  font-weight: 600;
+}
+
+.md-body tr:nth-child(2n) td {
+  background: color-mix(in srgb, var(--bg-raised) 55%, transparent);
+}
+
+.md-body hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.6em 0;
+}
+
+.md-body img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+/* ---------- image / pdf viewers (M3) ---------- */
+
+.viewer-img-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: auto;
+  padding: 18px;
+  position: relative;
+}
+
+/* Fit-to-window sizing is computed in the component (natural size × fit scale
+   × zoom); max constraints would cap zoomed images at the viewport, so they
+   only apply via inline style before the natural size is known. margin:auto
+   centers when smaller and degrades to 0 when zoomed beyond the viewport, so
+   scrolling reaches every edge. */
+.viewer-img {
+  object-fit: contain;
+  margin: auto;
+  border-radius: 6px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+.viewer-svg {
+  max-width: 100%;
+}
+
+.viewer-error {
+  color: var(--fg-dim);
+  font-family: inherit;
+}
+
+.pdf-view {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  /* As a ROW-flex child (group body): without min-width:0 the zoomed pages'
+     min-content width blows the view past the group and pushes the anchored
+     toolbar off-screen. */
+  min-width: 0;
+  min-height: 0;
+}
+
+.pdf-pages {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  background: var(--bg-raised);
+}
+
+.pdf-page {
+  background: #fff;
+  border-radius: 3px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
+  /* margin:auto centering degrades to 0 when zoomed past the viewport, so
+     scrolling reaches the page edges (align-items:center would clip). */
+  margin: 0 auto;
+  flex: 0 0 auto;
+}
+
+.pdf-progress {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 2;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-card) 88%, transparent);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+/* ---------- office viewers ---------- */
+
+.office-view {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  /* Same as .pdf-view: row-flex child needs min-width:0 or zoomed content
+     pushes the toolbar (anchored to this view's right edge) off-screen. */
+  min-width: 0;
+  min-height: 0;
+}
+
+/* docx: docx-preview paints its own gray canvas around the paper; re-theme
+   it to the same page-on-raised look as the PDF viewer. */
+.docx-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+  background: var(--bg-raised);
+}
+
+.docx-scroll .docx-wrapper {
+  background: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.docx-scroll .docx-wrapper > section.docx {
+  background: #fff;
+  border-radius: 3px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
+  flex: 0 0 auto;
+}
+
+/* xlsx */
+.xlsx-sheetbar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.xlsx-sheet {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  transition: background 100ms;
+}
+
+.xlsx-sheet:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.xlsx-sheet.is-active {
+  background: var(--bg-active);
+  color: var(--fg);
+}
+
+.xlsx-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  background: var(--bg-raised);
+}
+
+.xlsx-body table {
+  border-collapse: collapse;
+  background: #fff;
+  color: #1f2328;
+  font-size: 12px;
+}
+
+.xlsx-body td {
+  border: 1px solid #d8dce1;
+  padding: 3px 8px;
+  max-width: 320px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* pptx */
+.pptx-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+  background: var(--bg-raised);
+}
+
+.pptx-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pptx-slide {
+  flex: 0 0 auto;
+  background: #fff;
+  color: #1f2328;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
+  padding: 14px 18px;
+}
+
+.pptx-slide-no {
+  font-size: 11px;
+  color: #8a919c;
+  margin-bottom: 4px;
+}
+
+.pptx-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.pptx-lines {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.pptx-empty {
+  color: #8a919c;
+  font-size: 12px;
+  margin: 0;
+}
+
+/* ---------- unsupported / no-preview card ---------- */
+
+.unsupported {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  overflow: auto;
+}
+
+.unsupported-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 400px;
+  padding: 30px 28px;
+  border-radius: 14px;
+  border: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--bg-card) 55%, transparent);
+  text-align: center;
+}
+
+.unsupported.is-compact .unsupported-card {
+  padding: 20px;
+  gap: 8px;
+}
+
+.unsupported-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.unsupported-desc {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+
+/* Full-width rows: format name left, complete extension list right — no
+   ellipsis anywhere, long lists wrap instead. */
+.unsupported-formats {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.unsupported-chip {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+
+.unsupported-chip i {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1.5;
+  opacity: 0.65;
+  text-align: right;
+}
+
+.unsupported-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.unsupported-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  transition: background 100ms, color 100ms;
+}
+
+.unsupported-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.unsupported-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.unsupported-btn.is-primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-fg);
+}
+
+.unsupported-btn.is-primary:hover {
+  background: color-mix(in srgb, var(--accent) 85%, #fff);
+  color: var(--accent-fg);
 }
 
 /* ---------- shared atoms ---------- */
@@ -465,12 +1545,13 @@
 .btn-icon {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   color: var(--fg-dim);
   font-size: 15px;
   line-height: 1;
+  transition: background 100ms;
 }
 
 .btn-icon:hover {
@@ -481,6 +1562,7 @@
 .btn-icon:disabled {
   color: var(--border-strong);
   background: none;
+  cursor: default;
 }
 
 kbd {
@@ -490,7 +1572,7 @@ kbd {
   border: 1px solid var(--border-strong);
   border-bottom-width: 2px;
   border-radius: 4px;
-  background: var(--bg-raised);
+  background: var(--bg-card);
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--fg-dim);
@@ -501,5 +1583,195 @@ code {
   font-size: 12px;
   background: var(--md-code-bg);
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: 4px;
+}
+
+/* ---------- about / update dialog ---------- */
+
+.about-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.about-dialog {
+  width: 420px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 22px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--card-radius);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-menu);
+}
+
+.about-head {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.about-logo {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.about-name {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--fg);
+  line-height: 1.3;
+}
+
+.about-version {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.about-tagline {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--fg-dim);
+}
+
+.about-desc {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--fg-dim);
+}
+
+.about-features {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+
+.about-features li {
+  position: relative;
+  padding-left: 19px;
+}
+
+.about-features li::before {
+  content: '¹3';
+  position: absolute;
+  left: 2px;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.about-tech {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+
+.about-new {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.about-error {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.about-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.about-spinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: about-spin 0.8s linear infinite;
+}
+
+@keyframes about-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.about-notes-label {
+  font-size: 11.5px;
+  color: var(--fg-faint);
+}
+
+.about-notes {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fg-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.about-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dlg-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  transition: background 100ms, color 100ms;
+}
+
+.dlg-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.dlg-btn.is-primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-fg);
+}
+
+.dlg-btn.is-primary:hover {
+  background: color-mix(in srgb, var(--accent) 85%, #fff);
+  color: var(--accent-fg);
 }

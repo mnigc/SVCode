@@ -1,31 +1,58 @@
-import { activeTab, useWorkspace } from '../store/workspace'
-import { KIND_LABEL } from '../lib/paths'
+import { useEffect, useState } from 'react'
+import { useWorkspace } from '../store/workspace'
+import { extname } from '../lib/paths'
+import { useT, tBackend } from '../lib/i18n'
+import { MdPreview } from './MdPreview'
+import { UnsupportedCard } from './UnsupportedCard'
 
-export function PreviewPane() {
-  const tab = useWorkspace(activeTab)
+/**
+ * The preview pane of ONE editor group (it lives inside that group, right of
+ * its editor). Markdown renders live; SVG text files render through an <img>
+ * data URL, which is script-inert by spec — the safest way to show untrusted
+ * vector files.
+ */
+export function PreviewPane({ groupId }: { groupId: number }) {
+  const t = useT()
+  const tab = useWorkspace((s) => {
+    const active = s.groupActive[groupId]
+    return s.tabs.find((t) => t.group === groupId && t.path === active) ?? null
+  })
   const togglePreview = useWorkspace((s) => s.togglePreview)
+  const [svgUrl, setSvgUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!tab || tab.kind !== 'text' || extname(tab.path) !== 'svg') {
+      setSvgUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(new Blob([tab.text], { type: 'image/svg+xml' }))
+    setSvgUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [tab?.path, tab?.text, tab?.kind, tab])
 
   return (
     <aside className="preview">
       <div className="preview-head">
-        <span>预览</span>
-        <button className="btn-icon" title="关闭预览 (Ctrl+Shift+V)" onClick={togglePreview}>
+        <span>{t('preview.title')}</span>
+        <button className="btn-icon" title={t('preview.close')} onClick={() => togglePreview(groupId)}>
           ×
         </button>
       </div>
       <div className="preview-body">
         {!tab ? (
-          <p className="preview-hint">打开一个文件后这里会显示预览。</p>
+          <p className="preview-hint">{t('preview.empty')}</p>
         ) : tab.kind === 'markdown' ? (
-          <p className="preview-hint">Markdown 渲染在 M2 接入，当前显示原文。</p>
-        ) : tab.kind === 'image' || tab.kind === 'pdf' ? (
-          <p className="preview-hint">
-            {KIND_LABEL[tab.kind]} 预览在 M3 接入。
-          </p>
+          tab.loading ? (
+            <p className="preview-hint">{t('pane.loading')}</p>
+          ) : tab.error ? (
+            <p className="preview-hint">{tBackend(tab.error)}</p>
+          ) : (
+            <MdPreview tab={tab} />
+          )
+        ) : svgUrl ? (
+          <img className="viewer-svg" src={svgUrl} alt={tab.name} draggable={false} />
         ) : (
-          <p className="preview-hint">
-            <code>{KIND_LABEL[tab.kind]}</code> 没有预览形态。
-          </p>
+          <UnsupportedCard tab={tab} compact />
         )}
       </div>
     </aside>

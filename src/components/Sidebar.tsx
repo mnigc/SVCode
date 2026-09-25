@@ -1,17 +1,22 @@
 import { useWorkspace } from '../store/workspace'
 import { FileTree } from './FileTree'
+import { SearchBox, SearchResults } from './SearchPanel'
+import { useSearch } from '../lib/search'
+import { useT } from '../lib/i18n'
 
 export function Sidebar() {
+  const t = useT()
   const selectedDir = useWorkspace((s) => s.selectedDir)
   const openInTerminal = useWorkspace((s) => s.openInTerminal)
+  const query = useSearch((s) => s.query)
 
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
-        <span className="sidebar-title">资源管理器</span>
+        <span className="sidebar-title">{t('sidebar.explorer')}</span>
         <button
           className="btn-icon"
-          title={selectedDir ? `在终端中打开 ${selectedDir}` : '先在左侧选中一个文件夹'}
+          title={selectedDir ? t('sidebar.terminal', { path: selectedDir }) : t('sidebar.terminalHint')}
           disabled={!selectedDir}
           onClick={() => void openInTerminal()}
         >
@@ -35,9 +40,8 @@ export function Sidebar() {
           </svg>
         </button>
       </div>
-      <div className="sidebar-body">
-        <FileTree />
-      </div>
+      <SearchBox />
+      <div className="sidebar-body">{query.trim() ? <SearchResults /> : <FileTree />}</div>
     </aside>
   )
 }

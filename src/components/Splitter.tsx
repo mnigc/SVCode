@@ -15,6 +15,10 @@ export function Splitter({ side, width, onWidth }: Props) {
     (e: ReactPointerEvent<HTMLDivElement>) => {
       e.currentTarget.setPointerCapture(e.pointerId)
       drag.current = { x: e.clientX, w: width }
+      // The pane wrappers animate width for open/close; that transition must
+      // not run during a drag or the pane lags every pointer move and the
+      // edge visibly oscillates (the "accordion" effect).
+      document.documentElement.classList.add('pane-resizing')
     },
     [width],
   )
@@ -30,6 +34,7 @@ export function Splitter({ side, width, onWidth }: Props) {
 
   const onPointerUp = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     drag.current = null
+    document.documentElement.classList.remove('pane-resizing')
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId)
     }
