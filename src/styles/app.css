@@ -698,10 +698,13 @@
   width: 62px;
   height: 62px;
   margin-bottom: 16px;
-  border-radius: 16px;
-  color: var(--accent-fg);
-  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #8a5cf6));
-  box-shadow: 0 6px 24px color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 14px;
+  filter: drop-shadow(0 6px 20px color-mix(in srgb, var(--accent) 25%, transparent));
+}
+
+.welcome-logo img {
+  display: block;
+  border-radius: 12px;
 }
 
 .welcome h1 {
@@ -1626,9 +1629,12 @@ code {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 11px;
-  background: var(--accent);
-  color: var(--accent-fg);
+  border-radius: 10px;
+}
+
+.about-logo img {
+  display: block;
+  border-radius: 9px;
 }
 
 .about-name {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useT } from '../lib/i18n'
+import logoUrl from '../assets/logo.png'
 import {
   REPO_URL,
   fetchLatestRelease,
@@ -76,9 +77,7 @@ export function AboutDialog({ open, checkSeq, onClose }: Props) {
       <div className="about-dialog" role="dialog" aria-modal onClick={(e) => e.stopPropagation()}>
         <div className="about-head">
           <span className="about-logo" aria-hidden>
-            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5.4 4.6 2 8l3.4 3.4M10.6 4.6 14 8l-3.4 3.4" />
-            </svg>
+            <img src={logoUrl} width="38" height="38" alt="" />
           </span>
           <div>
             <div className="about-name">SVCode</div>

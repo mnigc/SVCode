@@ -5,6 +5,7 @@ import { ImageViewer } from './ImageViewer'
 import { OfficeViewer } from './OfficeViewer'
 import { PdfViewer } from './PdfViewer'
 import { UnsupportedCard } from './UnsupportedCard'
+import logoUrl from '../assets/logo.png'
 
 /** The editor area of ONE group: its active tab, or the welcome card. */
 export function EditorPane({ groupId }: { groupId: number }) {
@@ -20,9 +21,7 @@ export function EditorPane({ groupId }: { groupId: number }) {
     return (
       <div className="welcome">
         <div className="welcome-logo">
-          <svg width="30" height="30" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M5.4 4.6 2 8l3.4 3.4M10.6 4.6 14 8l-3.4 3.4" />
-          </svg>
+          <img src={logoUrl} width="56" height="56" alt="" aria-hidden />
         </div>
         <h1>SVCode</h1>
         <p className="welcome-sub">{t('welcome.tagline')}</p>
