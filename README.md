@@ -121,19 +121,6 @@ refused with a nudge to an external app; saves go through a temp file + atomic r
 preview runs with `html: false` — raw HTML is escaped into visible text, so injection is ruled out
 by construction.
 
-## Milestones
-
-| Stage | Scope | Status |
-| --- | --- | --- |
-| M0 / M0.5 | Scaffold, three-pane layout, frameless title bar, whole-disk tree, terminal | ✅ |
-| M1 | CodeMirror 6 core, language packs, find & replace, persisted settings | ✅ |
-| M2 | Markdown edit/preview split, GFM | ✅ |
-| M3 | Image + PDF preview | ✅ |
-| M4 | Themes, session restore (incl. drafts), shortcuts, installer | ✅ |
-| M5 | Whole-disk file-name search (Everything IPC + built-in index) | ✅ |
-| M6 | Office preview (docx / xlsx / pptx) | ✅ |
-| Next | Direct NTFS MFT reading (optional, elevated), more polish | 🚧 |
-
 ## Tech stack
 
 Tauri 2 · React 19 · TypeScript · zustand · CodeMirror 6 · markdown-it · pdf.js · docx-preview ·

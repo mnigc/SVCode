@@ -112,19 +112,6 @@ SVCode (Tauri 2 窗口, WebView2)
 打开、超过约 20MB 拒绝读取并引导外部程序；保存用临时文件 + rename 原子替换。
 Markdown 预览 `html: false`，原始 HTML 直接转义为可见文本，从构造上杜绝注入。
 
-## 开发里程碑
-
-| 阶段 | 内容 | 状态 |
-| --- | --- | --- |
-| M0 / M0.5 | 脚手架、三栏布局、无边框标题栏、全盘文件树、外部终端 | ✅ |
-| M1 | CodeMirror 6 编辑核心、语言包、查找替换、设置持久化 | ✅ |
-| M2 | Markdown 编辑/预览分栏、GFM | ✅ |
-| M3 | 图片 + PDF 预览 | ✅ |
-| M4 | 主题、会话恢复（含草稿）、快捷键、安装包 | ✅ |
-| M5 | 全盘文件名搜索（Everything IPC + 自建索引） | ✅ |
-| M6 | Office 预览（docx / xlsx / pptx） | ✅ |
-| 后续 | NTFS MFT 直读（提权环境下的可选加速）、更多打磨 | 🚧 |
-
 ## 技术栈
 
 Tauri 2 · React 19 · TypeScript · zustand · CodeMirror 6 · markdown-it · pdf.js · docx-preview · SheetJS · Rust（`everything-ipc` · `ignore` · `notify` · `encoding_rs`）
