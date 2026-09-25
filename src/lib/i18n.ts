@@ -13,8 +13,6 @@ const dict = {
   'menu.closeTab': { zh: '关闭标签页', en: 'Close Tab' },
   'menu.openTerminal': { zh: '在终端中打开', en: 'Open in Terminal' },
   'menu.exit': { zh: '退出', en: 'Exit' },
-  'menu.toggleSidebar': { zh: '切换侧边栏', en: 'Toggle Sidebar' },
-  'menu.togglePreview': { zh: '切换预览面板', en: 'Toggle Preview Panel' },
   'theme.dark': { zh: '暗色主题', en: 'Dark Theme' },
   'theme.light': { zh: '亮色主题', en: 'Light Theme' },
   'theme.auto': { zh: '跟随系统', en: 'Follow System' },
@@ -23,6 +21,36 @@ const dict = {
   'menu.help': { zh: '帮助', en: 'Help' },
   'menu.checkUpdate': { zh: '检查更新', en: 'Check for Updates' },
   'menu.about': { zh: '关于 SVCode', en: 'About SVCode' },
+
+  // settings dialog
+  'menu.settings': { zh: '设置…', en: 'Settings…' },
+  'settings.title': { zh: '设置', en: 'Settings' },
+  'settings.appearance': { zh: '外观', en: 'Appearance' },
+  'settings.editor': { zh: '编辑器', en: 'Editor' },
+  'settings.preview': { zh: '预览', en: 'Preview' },
+  'settings.files': { zh: '文件', en: 'Files' },
+  'settings.theme': { zh: '主题', en: 'Theme' },
+  'settings.lang': { zh: '界面语言', en: 'UI Language' },
+  'settings.fontSize': { zh: '编辑器字号', en: 'Editor font size' },
+  'settings.tabSize': { zh: '缩进宽度（空格）', en: 'Indent width (spaces)' },
+  'settings.wordWrap': { zh: '自动换行', en: 'Word Wrap' },
+  'settings.wordWrap.desc': {
+    zh: '超出宽度的行折行显示，不改动文件内容',
+    en: 'Soft-wrap long lines on screen; file content is unchanged',
+  },
+  'settings.lineNumbers': { zh: '显示行号', en: 'Show Line Numbers' },
+  'settings.defaultView': { zh: '新分组默认视图', en: 'Default View for New Groups' },
+  'settings.defaultView.desc': {
+    zh: '拆分或新建分组时的初始视图；已打开分组的视图切换不受影响',
+    en: 'Initial view when a group is split or created; never resets an existing group’s view',
+  },
+  'settings.showHidden': { zh: '显示隐藏文件', en: 'Show Hidden Files' },
+  'settings.showHidden.desc': {
+    zh: '在文件树中显示系统隐藏文件（如 desktop.ini）',
+    en: 'Show system-hidden files in the tree (e.g. desktop.ini)',
+  },
+  'settings.reset': { zh: '恢复默认设置', en: 'Reset to Defaults' },
+  'settings.done': { zh: '完成', en: 'Done' },
 
   // about / update dialog
   'about.tagline': { zh: '轻量、编辑优先的文本 / 代码编辑器', en: 'A lightweight, edit-first text & code editor' },
@@ -89,6 +117,7 @@ const dict = {
 
   // sidebar
   'sidebar.explorer': { zh: '资源管理器', en: 'Explorer' },
+  'sidebar.quickAccess': { zh: '快速访问', en: 'Quick Access' },
   'sidebar.terminal': { zh: '在终端中打开 {path}', en: 'Open {path} in Terminal' },
   'sidebar.terminalHint': { zh: '先在左侧选中一个文件夹', en: 'Pick a folder on the left first' },
 
@@ -150,6 +179,10 @@ const dict = {
   'tree.clipboardEmpty': { zh: '剪贴板为空', en: 'Clipboard is empty' },
   'tree.rename': { zh: '重命名', en: 'Rename' },
   'tree.delete': { zh: '删除', en: 'Delete' },
+  'tree.pin': { zh: '固定到快速访问', en: 'Pin to Quick Access' },
+  'tree.unpin': { zh: '从快速访问移除', en: 'Unpin from Quick Access' },
+  'qa.missing': { zh: '文件夹不存在或无法访问', en: 'Folder is missing or inaccessible' },
+  'qa.empty': { zh: '右键文件夹可固定到快速访问', en: 'Right-click a folder to pin it here' },
   'dialog.cancel': { zh: '取消', en: 'Cancel' },
   'dialog.close': { zh: '关闭', en: 'Close' },
 

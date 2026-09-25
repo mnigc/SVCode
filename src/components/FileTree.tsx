@@ -102,6 +102,8 @@ function TreeNode({ path, depth, ctx }: { path: string; depth: number; ctx: Tree
       <div
         className={`tree-row${fileActive ? ' is-selected' : ''}${dirActive ? ' is-dir-active' : ''}${node.access === 'denied' ? ' is-denied' : ''}`}
         style={{ paddingLeft: indent }}
+        // Quick Access reveal scrolls this row into view by path.
+        data-path={path}
         onClick={onRowClick}
         onContextMenu={(e) => {
           e.preventDefault()

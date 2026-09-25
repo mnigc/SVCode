@@ -52,6 +52,7 @@ edit.**
 | Type | Powered by |
 | --- | --- |
 | Markdown | markdown-it + GFM + task lists, edit/preview split |
+| HTML | sandboxed iframe preview (scripts disabled) |
 | Images | PNG / JPG / GIF / WebP / SVG / BMP / ICO, zoom to fit |
 | PDF | pdf.js rendering, zoom to fit |
 | Office | .docx (docx-preview), .xlsx (SheetJS, truncated past 500 rows with a notice), .pptx (custom parser, text extraction) |
@@ -118,8 +119,9 @@ The file tree shows the whole machine's file system; reads and writes go through
 `#[tauri::command]`s (not bound by capability scopes), so **the entire disk is reachable**. As
 compensation the backend enforces two hard lines: text over ~5 MB opens read-only, over ~20 MB is
 refused with a nudge to an external app; saves go through a temp file + atomic rename. Markdown
-preview runs with `html: false` — raw HTML is escaped into visible text, so injection is ruled out
-by construction.
+preview sanitizes raw HTML through an allowlist (dangerous tags dropped with their subtree, URL
+attributes filtered), and HTML files render inside a fully sandboxed iframe — no script, form, or
+popup can escape.
 
 ## Tech stack
 

@@ -55,11 +55,12 @@ const tabSizeComp = new Compartment()
 const wrapComp = new Compartment()
 const langComp = new Compartment()
 const readOnlyComp = new Compartment()
+const lineNumComp = new Compartment()
 
 function baseExtensions(tab: TabInfo): Extension[] {
   const s = useSettings.getState()
   return [
-    lineNumbers(),
+    lineNumComp.of(s.lineNumbers ? lineNumbers() : []),
     highlightActiveLineGutter(),
     highlightActiveLine(),
     foldGutter(),
@@ -214,6 +215,8 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
   // Settings live-reconfigure without touching history.
   const tabSize = useSettings((s) => s.tabSize)
   const wordWrap = useSettings((s) => s.wordWrap)
+  const showLineNumbers = useSettings((s) => s.lineNumbers)
+  const fontSize = useSettings((s) => s.fontSize)
   useEffect(() => {
     view.current?.dispatch({
       effects: tabSizeComp.reconfigure([
@@ -223,8 +226,13 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
     })
   }, [tabSize])
   useEffect(() => {
-    document.documentElement.style.setProperty('--cm-font-size', `${useSettings.getState().fontSize}px`)
-  }, [])
+    document.documentElement.style.setProperty('--cm-font-size', `${fontSize}px`)
+  }, [fontSize])
+  useEffect(() => {
+    view.current?.dispatch({
+      effects: lineNumComp.reconfigure(showLineNumbers ? lineNumbers() : []),
+    })
+  }, [showLineNumbers])
   useEffect(() => {
     view.current?.dispatch({ effects: wrapComp.reconfigure(wordWrap ? EditorView.lineWrapping : []) })
   }, [wordWrap])

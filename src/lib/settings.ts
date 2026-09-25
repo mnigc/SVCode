@@ -3,37 +3,62 @@ import { kv } from './persist'
 
 export type ThemeName = 'dark' | 'light' | 'auto'
 export type LangPref = 'auto' | 'zh' | 'en'
+export type ViewPref = 'edit' | 'both' | 'preview'
 
-export interface SettingsState {
+/** Everything the user can configure, with the defaults used before any
+ * settings.json exists. New settings go here + in the dialog below. */
+export interface SettingsValues {
   theme: ThemeName
   lang: LangPref
   fontSize: number
   tabSize: number
   wordWrap: boolean
+  lineNumbers: boolean
   showHidden: boolean
-  loaded: boolean
-
-  load: () => Promise<void>
-  patch: (
-    changes: Partial<
-      Pick<SettingsState, 'theme' | 'lang' | 'fontSize' | 'tabSize' | 'wordWrap' | 'showHidden'>
-    >,
-  ) => void
+  /** Initial view mode of NEW editor groups (split / open to the side);
+   * existing groups keep their sticky per-group view. */
+  defaultView: ViewPref
 }
 
-export const useSettings = create<SettingsState>((set, get) => ({
+export const DEFAULT_SETTINGS: SettingsValues = {
   theme: 'dark',
   lang: 'auto',
   fontSize: 13,
   tabSize: 2,
   wordWrap: true,
+  lineNumbers: true,
   showHidden: false,
+  defaultView: 'both',
+}
+
+const PERSIST_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof SettingsValues)[]
+
+export interface SettingsState extends SettingsValues {
+  loaded: boolean
+
+  load: () => Promise<void>
+  patch: (changes: Partial<SettingsValues>) => void
+}
+
+export const useSettings = create<SettingsState>((set, get) => ({
+  ...DEFAULT_SETTINGS,
   loaded: false,
 
   load: async () => {
     try {
-      const saved = await kv('settings.json').then((k) => k.get<Partial<SettingsState>>('settings'))
-      if (saved) set({ ...saved, loaded: true })
+      const saved = await kv('settings.json').then((k) => k.get<Partial<SettingsValues>>('settings'))
+      if (saved) {
+        // Only known keys, over the defaults — stale/unknown entries in the
+        // file must not leak into state (e.g. after a setting is removed).
+        const clean = PERSIST_KEYS.reduce<Partial<SettingsValues>>((acc, key) => {
+          if (saved[key] !== undefined) (acc[key] as SettingsValues[typeof key]) = saved[key]!
+          return acc
+        }, {})
+        set({ ...clean, loaded: true })
+      }
+    } catch {
+      // A broken store must not take the boot chain down: App.tsx loads the
+      // file system in a .then() off this, so swallow and use the defaults.
     } finally {
       set({ loaded: true })
       applyTheme(get().theme)
@@ -43,16 +68,9 @@ export const useSettings = create<SettingsState>((set, get) => ({
   patch: (changes) => {
     set(changes)
     if (changes.theme !== undefined) applyTheme(changes.theme)
-    void kv('settings.json').then((k) =>
-      k.set('settings', {
-        theme: get().theme,
-        lang: get().lang,
-        fontSize: get().fontSize,
-        tabSize: get().tabSize,
-        wordWrap: get().wordWrap,
-        showHidden: get().showHidden,
-      }),
-    )
+    const s = get()
+    const values = Object.fromEntries(PERSIST_KEYS.map((key) => [key, s[key]]))
+    void kv('settings.json').then((k) => k.set('settings', values))
   },
 }))
 

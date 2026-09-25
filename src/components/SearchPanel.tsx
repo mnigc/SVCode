@@ -3,6 +3,7 @@ import { useWorkspace } from '../store/workspace'
 import { SEARCH_LIMIT, useSearch, scopedQuery } from '../lib/search'
 import { basename, dirname } from '../lib/paths'
 import { useT } from '../lib/i18n'
+import { scrollIntoContainer } from '../lib/scrollIntoContainer'
 import { DIR_ICON, fileIcon } from '../lib/fileIcons'
 import { NodeIcon } from './NodeIcon'
 
@@ -142,9 +143,10 @@ export function SearchResults() {
   useEffect(() => setSelected(0), [results])
 
   useEffect(() => {
-    listRef.current
-      ?.querySelector('.search-row.is-selected')
-      ?.scrollIntoView({ block: 'nearest' })
+    const list = listRef.current
+    if (!list) return
+    const row = list.querySelector('.search-row.is-selected')
+    if (row) scrollIntoContainer(row, list)
   }, [selected])
 
   const activate = (hit: (typeof results)[number]) => {

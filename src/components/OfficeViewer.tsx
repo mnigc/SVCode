@@ -5,6 +5,9 @@ import { useWorkspace } from '../store/workspace'
 import { extname } from '../lib/paths'
 import { useT } from '../lib/i18n'
 import { clampZoom } from '../lib/viewerZoom'
+import { parseXlsxInWorker } from '../lib/xlsxParse'
+import type { ParsedSheet } from '../lib/xlsxParse'
+import { XLSX_MAX_COLS, XLSX_MAX_ROWS } from '../lib/xlsxLimits'
 
 /**
  * Read-only preview for OOXML documents (.docx/.xlsx/.pptx), rendered in the
@@ -196,41 +199,21 @@ function DocxView({ path, isActive }: { path: string; isActive: boolean }) {
 
 /* ---------- .xlsx ---------- */
 
-const MAX_ROWS = 500
-const MAX_COLS = 40
-
 function XlsxView({ path, isActive }: { path: string; isActive: boolean }) {
   const t = useT()
   const scroller = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
-  const [sheets, setSheets] = useState<{ name: string; html: string; truncated: boolean }[]>([])
+  const [sheets, setSheets] = useState<ParsedSheet[]>([])
   const [active, setActive] = useState(0)
+  const workerRef = useRef<Worker | null>(null)
   const { zoom, zoomRef, zoomAt } = useViewerZoom(path)
 
+  // Terminated here as well as inside the parse client: switching files or
+  // unmounting (the viewer is keyed by path) kills an in-flight parse.
+  useEffect(() => () => workerRef.current?.terminate(), [])
+
   const state = useDocument(path, async (buf) => {
-    const XLSX = await import('xlsx')
-    const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
-    setSheets(
-      wb.SheetNames.map((name) => {
-        const ws = wb.Sheets[name]
-        let truncated = false
-        const ref = ws['!ref']
-        if (ref) {
-          const range = XLSX.utils.decode_range(ref)
-          if (range.e.r - range.s.r + 1 > MAX_ROWS || range.e.c - range.s.c + 1 > MAX_COLS) {
-            truncated = true
-            range.e.r = Math.min(range.e.r, range.s.r + MAX_ROWS - 1)
-            range.e.c = Math.min(range.e.c, range.s.c + MAX_COLS - 1)
-          }
-        }
-        return {
-          name,
-          // Bare <table> markup with merged cells and formatted numbers.
-          html: XLSX.utils.sheet_to_html(ws, { header: '', footer: '' }),
-          truncated,
-        }
-      }),
-    )
+    setSheets(await parseXlsxInWorker(buf, (w) => (workerRef.current = w)))
     setActive(0)
   })
 
@@ -262,7 +245,7 @@ function XlsxView({ path, isActive }: { path: string; isActive: boolean }) {
           </div>
           {sheet.truncated && (
             <div className="banner">
-              {t('office.truncated', { rows: MAX_ROWS, cols: MAX_COLS })}
+              {t('office.truncated', { rows: XLSX_MAX_ROWS, cols: XLSX_MAX_COLS })}
             </div>
           )}
           <div className="xlsx-scroll" ref={scroller}>

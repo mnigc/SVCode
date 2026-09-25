@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { useWorkspace, activePathOf, flatGroups, hasPreview } from './store/workspace'
+import { useQuickAccess } from './store/quickAccess'
 import { Sidebar } from './components/Sidebar'
 import { TabStrip } from './components/TabStrip'
 import { EditorPane } from './components/EditorPane'
@@ -43,6 +44,7 @@ export default function App() {
   useEffect(() => {
     void useSettings.getState().load().then(() => useWorkspace.getState().loadSystemTree())
     void restoreSession().catch((e) => console.error('[svcode] session restore failed:', e))
+    void useQuickAccess.getState().load()
     void kickOffSearchBackend()
     return useWorkspace.subscribe(scheduleSessionSave)
   }, [])

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useWorkspace } from '../store/workspace'
 import { useT } from '../lib/i18n'
+import { revealInTree } from '../lib/reveal'
+import { scrollIntoContainer } from '../lib/scrollIntoContainer'
 import { NodeIcon } from './NodeIcon'
 import { NodeMenu } from './NodeMenu'
 
@@ -97,10 +99,8 @@ export function TabStrip({ groupId }: { groupId: number }) {
     update()
     el.addEventListener('scroll', update, { passive: true })
     const bringActiveIntoView = () => {
-      el.querySelector('.tab.is-active')?.scrollIntoView({
-        block: 'nearest',
-        inline: 'nearest',
-      })
+      const tab = el.querySelector('.tab.is-active')
+      if (tab) scrollIntoContainer(tab, el)
     }
     const ro = new ResizeObserver(() => {
       update()
@@ -118,10 +118,10 @@ export function TabStrip({ groupId }: { groupId: number }) {
 
   // No native scrollbar: follow the active tab into view instead.
   useEffect(() => {
-    if (!activePath || !scroller.current) return
-    scroller.current
-      .querySelector('.tab.is-active')
-      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    const el = scroller.current
+    if (!activePath || !el) return
+    const tab = el.querySelector('.tab.is-active')
+    if (tab) scrollIntoContainer(tab, el)
   }, [activePath, groupTabs.length])
 
   useEffect(() => {
@@ -213,7 +213,13 @@ export function TabStrip({ groupId }: { groupId: number }) {
             aria-selected={t.path === activePath}
             className={`tab${t.path === activePath ? ' is-active' : ''}`}
             title={t.path}
-            onClick={() => activate(t.path)}
+            onClick={() => {
+              activate(t.path)
+              // Locate the file in the tree as well: expand its ancestor
+              // chain (expand-only) and scroll the row into view. Expand-only
+              // means re-clicking a tab never folds the tree back up.
+              void revealInTree(t.path)
+            }}
             onContextMenu={(e) => {
               e.preventDefault()
               setMenu({ x: e.clientX, y: e.clientY, path: t.path })

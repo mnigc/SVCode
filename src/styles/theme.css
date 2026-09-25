@@ -17,16 +17,17 @@ html[data-theme='dark'] {
   --bg-raised: #23242a;
   --bg-hover: #2a2c33;
   --bg-active: #32353e;
-  --border: #26272c;
-  --border-strong: #373a43;
+  /* Borders sit on card/raised surfaces: visible as a hairline, never loud. */
+  --border: #303239;
+  --border-strong: #454a56;
   --fg: #d9dbe1;
   --fg-dim: #9ba0ad;
-  --fg-faint: #6b7078;
+  --fg-faint: #767c86;
   --accent: #4e9dff;
   --accent-fg: #0c1220;
   --danger: #e0655b;
   --warn: #d9a441;
-  --scrollbar: #35383f;
+  --scrollbar: #3b3e47;
 
   --icon-folder: #e6c34a;
   --icon-file: #8f96a3;
@@ -41,8 +42,8 @@ html[data-theme='dark'] {
   --cm-cursor: var(--accent);
   --cm-selection: #2f4468;
 
-  --md-quote: #8a93a6;
-  --md-code-bg: #26272d;
+  --md-quote: #97a0b3;
+  --md-code-bg: #2a2d35;
   --md-link: var(--accent);
 
   /* syntax token palette (CodeMirror via editor/theme.ts) */
@@ -65,16 +66,16 @@ html[data-theme='light'] {
   --bg-raised: #f7f8fa;
   --bg-hover: #e6e9ee;
   --bg-active: #dbe1ea;
-  --border: #e3e5ea;
-  --border-strong: #c9cfda;
+  --border: #d4d8e0;
+  --border-strong: #b7bfcc;
   --fg: #24272e;
   --fg-dim: #5f6572;
-  --fg-faint: #9096a2;
+  --fg-faint: #868d9a;
   --accent: #2472e8;
   --accent-fg: #ffffff;
   --danger: #c0392b;
   --warn: #9a6700;
-  --scrollbar: #c9ced8;
+  --scrollbar: #c2c8d3;
 
   --icon-folder: #d0a414;
   --icon-file: #7c8494;
@@ -89,8 +90,8 @@ html[data-theme='light'] {
   --cm-cursor: var(--accent);
   --cm-selection: #cfe0f8;
 
-  --md-quote: #6b7280;
-  --md-code-bg: #f0f2f5;
+  --md-quote: #5f6774;
+  --md-code-bg: #eceef3;
   --md-link: var(--accent);
 
   /* syntax token palette (CodeMirror via editor/theme.ts) */

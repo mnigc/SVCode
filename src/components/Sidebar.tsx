@@ -1,6 +1,7 @@
 import { useWorkspace } from '../store/workspace'
 import { FileTree } from './FileTree'
 import { SearchBox, SearchResults } from './SearchPanel'
+import { QuickAccess } from './QuickAccess'
 import { useSearch } from '../lib/search'
 import { useT } from '../lib/i18n'
 
@@ -41,7 +42,16 @@ export function Sidebar() {
         </button>
       </div>
       <SearchBox />
-      <div className="sidebar-body">{query.trim() ? <SearchResults /> : <FileTree />}</div>
+      <div className="sidebar-body">
+        {query.trim() ? (
+          <SearchResults />
+        ) : (
+          <>
+            <QuickAccess />
+            <FileTree />
+          </>
+        )}
+      </div>
     </aside>
   )
 }

@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { ask } from '@tauri-apps/plugin-dialog'
 import { basename, dirname, extname, fileKind, joinPath, isRootPath, type FileKind } from '../lib/paths'
 import { t, tBackend, tDriveName } from '../lib/i18n'
+import { useSettings } from '../lib/settings'
 import { DIR_ICON, PC_ICON, driveIcon, fileIcon } from '../lib/fileIcons'
 
 /** Stand-in tree root for 此电脑. No real path can collide with it. */
@@ -216,7 +217,11 @@ export type GroupView = 'edit' | 'preview' | 'both'
  * status-bar switcher (or Ctrl+Shift+V) changes it, never open/activate. */
 
 export function hasPreview(path: string): boolean {
-  return fileKind(path) === 'markdown' || (fileKind(path) === 'text' && extname(path) === 'svg')
+  const ext = extname(path)
+  return (
+    fileKind(path) === 'markdown' ||
+    (fileKind(path) === 'text' && (ext === 'svg' || ext === 'html' || ext === 'htm'))
+  )
 }
 
 /** Prefix matching every node/tab path inside `path` (itself included). */
@@ -585,7 +590,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       rows: s.rows.map((r) => (r === row ? { ...r, groups } : r)),
       groupRatios: { ...s.groupRatios, [id]: 1 },
       groupActive: { ...s.groupActive, [id]: path },
-      groupView: { ...s.groupView, [id]: 'both' },
+      groupView: { ...s.groupView, [id]: useSettings.getState().defaultView },
       activeGroup: id,
       selectedDir: dirname(path),
       notice: null,
@@ -936,7 +941,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           rows: s.rows.map((r) => (r === row ? { ...r, groups } : r)),
           groupRatios: { ...s.groupRatios, [id]: 1 },
           groupActive: { ...s.groupActive, [id]: null },
-          groupView: { ...s.groupView, [id]: 'both' },
+          groupView: { ...s.groupView, [id]: useSettings.getState().defaultView },
           activeGroup: id,
         })
         return
@@ -952,7 +957,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         rowRatios: { ...s.rowRatios, [rowId]: 1 },
         groupRatios: { ...s.groupRatios, [id]: 1 },
         groupActive: { ...s.groupActive, [id]: null },
-        groupView: { ...s.groupView, [id]: 'both' },
+        groupView: { ...s.groupView, [id]: useSettings.getState().defaultView },
         activeGroup: id,
       })
     },

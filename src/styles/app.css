@@ -1,4 +1,15 @@
 /* ===================================================================
+   Selection: one palette-driven color for the whole app. Left to the
+   UA, WebView2 paints the OS system selection (a pale lavender in
+   Windows dark mode); the editor's own selection rules live in
+   editor/theme.ts.
+   =================================================================== */
+
+::selection {
+  background-color: var(--cm-selection);
+}
+
+/* ===================================================================
    Layout: one continuous surface for the top bar + sidebar, with the
    editor/preview area floating as a rounded card on top of it.
    =================================================================== */
@@ -285,6 +296,65 @@
   opacity: 0.25;
 }
 
+/* 快速访问: pinned folders shown above the tree, Explorer-style. */
+.qa {
+  margin-bottom: 6px;
+}
+
+.qa-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 26px;
+  padding: 0 6px 2px 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  color: var(--fg-faint);
+  cursor: default;
+  white-space: nowrap;
+  transition: background 100ms;
+}
+
+.qa-head:hover {
+  background: var(--bg-hover);
+}
+
+.qa-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* No pins yet: teach the gesture instead of hiding the section. */
+.qa-empty {
+  padding: 2px 0 4px 28px;
+  font-size: 11.5px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Deleted / unreachable pinned folders: dimmed, no interaction. */
+.qa-row.is-missing {
+  cursor: not-allowed;
+}
+
+.qa-row.is-missing .node-icon,
+.qa-row.is-missing .node-name {
+  opacity: 0.4;
+}
+
+.qa-row.is-missing:hover {
+  background: transparent;
+}
+
 .rename-input {
   flex: 1;
   min-width: 0;
@@ -423,6 +493,12 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  /* min-width: 0 is load-bearing: without it the row's min-content width
+     (many open tabs) propagates up and widens the whole editor area past
+     .pane-main — the tab strip then fits its content exactly, so the
+     overlay scrollbar never appears and the layout spills out of the
+     window. */
+  min-width: 0;
 }
 
 .editor-row {
@@ -795,6 +871,25 @@
   min-height: 0;
   overflow: auto;
   padding: 14px 16px;
+}
+
+/* SVG preview: the zoomable viewer brings its own padding and scrolling, so
+   the body must not add another layer (double padding → visible inset and
+   double scrollbars when zoomed). */
+.preview-body.is-media {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* HTML preview: sandboxed iframe fills the body edge-to-edge; white like a
+   browser viewport, since unstyled HTML assumes a light background. */
+.preview-html-frame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: #fff;
 }
 
 .preview-hint {
@@ -1228,9 +1323,8 @@
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
 }
 
-.viewer-svg {
-  max-width: 100%;
-}
+/* The SVG preview reuses .viewer-img sizing (component-computed width);
+   a max-width cap here would clamp zooming, so there is none. */
 
 .viewer-error {
   color: var(--fg-dim);
@@ -1781,4 +1875,197 @@ code {
 .dlg-btn.is-primary:hover {
   background: color-mix(in srgb, var(--accent) 85%, #fff);
   color: var(--accent-fg);
+}
+
+/* ---- settings dialog ---- */
+
+.settings-dialog {
+  width: 480px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 22px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--card-radius);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-menu);
+}
+
+.settings-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+  padding-bottom: 8px;
+}
+
+.settings-scroll {
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0 6px;
+}
+
+.settings-section + .settings-section {
+  border-top: 1px solid var(--border);
+}
+
+.settings-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  margin-bottom: 2px;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 0;
+  min-height: 34px;
+}
+
+.set-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.set-row-name {
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+.set-row-desc {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--fg-faint);
+}
+
+.set-seg {
+  display: flex;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.set-seg-btn {
+  padding: 4px 11px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background 100ms, color 100ms;
+}
+
+.set-seg-btn + .set-seg-btn {
+  border-left: 1px solid var(--border);
+}
+
+.set-seg-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.set-seg-btn.is-active {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.set-switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  flex: none;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+
+.set-switch::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--fg-dim);
+  transition: transform 120ms, background 120ms;
+}
+
+.set-switch.is-on {
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.set-switch.is-on::after {
+  transform: translateX(14px);
+  background: var(--accent-fg);
+}
+
+.set-stepper {
+  display: flex;
+  align-items: center;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.set-stepper-btn {
+  width: 26px;
+  height: 24px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background 100ms, color 100ms;
+}
+
+.set-stepper-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.set-stepper-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.set-stepper-val {
+  min-width: 28px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-spacer {
+  flex: 1;
 }

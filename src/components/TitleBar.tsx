@@ -4,6 +4,7 @@ import { useWorkspace } from '../store/workspace'
 import { useSettings, type ThemeName } from '../lib/settings'
 import { useT, type TextKey } from '../lib/i18n'
 import { AboutDialog } from './AboutDialog'
+import { SettingsDialog } from './SettingsDialog'
 import logoUrl from '../assets/logo.png'
 
 interface MenuEntry {
@@ -23,6 +24,21 @@ export function TitleBar() {
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [checkSeq, setCheckSeq] = useState(0)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // Global shortcut: Ctrl+, opens Settings (works even when the editor has
+  // focus — it's a key the editor never uses).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+        e.preventDefault()
+        setOpenMenu(null)
+        setSettingsOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   useEffect(() => {
     if (!openMenu) return
@@ -67,16 +83,15 @@ export function TitleBar() {
         disabled: !useWorkspace.getState().selectedDir,
       },
       { separator: true },
+      {
+        label: t('menu.settings'),
+        hint: 'Ctrl+,',
+        onSelect: () => setSettingsOpen(true),
+      },
+      { separator: true },
       { label: t('menu.exit'), onSelect: () => void win.close() },
     ],
     [t('menu.view')]: [
-      { label: t('menu.toggleSidebar'), hint: 'Ctrl+B', onSelect: () => useWorkspace.getState().toggleSidebar() },
-      {
-        label: t('menu.togglePreview'),
-        hint: 'Ctrl+Shift+V',
-        onSelect: () => useWorkspace.getState().togglePreview(),
-      },
-      { separator: true },
       ...([
         ['dark', 'theme.dark'],
         ['light', 'theme.light'],
@@ -212,6 +227,7 @@ export function TitleBar() {
     </header>
 
     <AboutDialog open={aboutOpen} checkSeq={checkSeq} onClose={() => setAboutOpen(false)} />
+    <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
   )
 }

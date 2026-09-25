@@ -48,6 +48,7 @@
 | 类型 | 方案 |
 | --- | --- |
 | Markdown | markdown-it + GFM + 任务列表，编辑/预览分栏 |
+| HTML | 沙箱 iframe 预览（禁用脚本） |
 | 图片 | PNG / JPG / GIF / WebP / SVG / BMP / ICO，缩放适配 |
 | PDF | pdf.js 渲染，缩放适配 |
 | Office | .docx（docx-preview）、.xlsx（SheetJS，超 500 行截断并提示）、.pptx（自写解析提取文字） |
@@ -110,7 +111,8 @@ SVCode (Tauri 2 窗口, WebView2)
 文件树直接展示整机文件系统，读写走自定义 `#[tauri::command]`（不受 capability scope
 约束），因此**能碰整个磁盘**。作为补偿，后端守住两条硬线：超过约 5MB 的文本按只读
 打开、超过约 20MB 拒绝读取并引导外部程序；保存用临时文件 + rename 原子替换。
-Markdown 预览 `html: false`，原始 HTML 直接转义为可见文本，从构造上杜绝注入。
+Markdown 预览对原始 HTML 做白名单消毒（危险标签连同内容整棵删除、URL 属性过滤），
+HTML 文件预览则在全沙箱 iframe（禁脚本/表单/弹窗）中渲染，注入均无落地渠道。
 
 ## 技术栈
 

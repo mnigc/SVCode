@@ -34,6 +34,14 @@ export const svcodeTheme = EditorView.theme(
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
       backgroundColor: 'var(--cm-selection)',
     },
+    // The editor is declared light (`dark: false` below), so CodeMirror's
+    // base theme ships a light focused-selection default whose selector —
+    // and specificity — beats the rule above, painting a pale lavender over
+    // the dark editor the moment it's focused (i.e. whenever the user
+    // selects). Mirror its exact selector so the tie breaks to the palette.
+    '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
+      backgroundColor: 'var(--cm-selection)',
+    },
     '.cm-gutters': {
       backgroundColor: 'var(--cm-gutter-bg)',
       color: 'var(--cm-gutter-fg)',

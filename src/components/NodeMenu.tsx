@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { create } from 'zustand'
 import { useWorkspace, THIS_PC, type NodeInfo } from '../store/workspace'
+import { useQuickAccess } from '../store/quickAccess'
 import { basename, dirname } from '../lib/paths'
 import { useT } from '../lib/i18n'
 
@@ -36,15 +37,20 @@ export function NodeMenu({
   path,
   x,
   y,
+  hint,
   onClose,
 }: {
   path: string
   x: number
   y: number
+  /** Facts the caller knows but the tree doesn't — Quick Access rows for
+   * folders absent from the tree (incl. deleted ones) pass this. */
+  hint?: { isDir?: boolean; missing?: boolean }
   onClose: () => void
 }) {
   const stored = useWorkspace((s) => s.nodes[path]) as NodeInfo | undefined
   const clipboard = useWorkspace((s) => s.clipboard)
+  const pinned = useQuickAccess((s) => s.pinned)
   const t = useT()
   if (path === THIS_PC) return null
 
@@ -52,15 +58,19 @@ export function NodeMenu({
   const node = stored ?? {
     path,
     name: basename(path),
-    isDir: false,
+    isDir: hint?.isDir ?? false,
     access: 'unknown' as const,
   }
+  // A Quick Access row whose folder is gone: only unpin makes sense —
+  // file ops would just surface disk errors.
+  const missing = hint?.missing ?? false
   const ws = useWorkspace.getState()
   const isDriveRoot = /^[a-zA-Z]:[\\/]$/.test(node.path) || node.path === '/'
   const isDir = node.isDir
   const denied = node.access === 'denied'
-  const canCreate = isDir && !denied
-  const canMutate = !isDriveRoot && !denied
+  const canCreate = isDir && !denied && !missing
+  const canMutate = !isDriveRoot && !denied && !missing
+  const pinnedHere = pinned.includes(path)
 
   const item = (
     label: string,
@@ -102,7 +112,10 @@ export function NodeMenu({
   }
 
   const startCreate = async (kind: 'new-file' | 'new-dir') => {
-    if (!stored?.expanded) await ws.toggleNode(path)
+    // The inline input renders in the tree row, so an unloaded folder
+    // (e.g. a pinned Quick Access dir) is revealed down the chain first.
+    if (!useWorkspace.getState().nodes[path]) await ws.revealPinned(path)
+    else if (!stored?.expanded) await ws.toggleNode(path)
     useTreeEditing.getState().set({ parent: path, kind })
   }
 
@@ -137,7 +150,7 @@ export function NodeMenu({
     )
   }
   items.push(
-    item(t('tree.copy'), () => ws.setClipboard('copy', path), { disabled: denied }),
+    item(t('tree.copy'), () => ws.setClipboard('copy', path), { disabled: denied || missing }),
     item(t('tree.cut'), () => ws.setClipboard('cut', path), { disabled: !canMutate }),
     item(t('tree.paste'), () => void ws.pasteInto(path), {
       disabled: !isDir || denied || !clipboard,
@@ -150,7 +163,17 @@ export function NodeMenu({
     item(t('tree.delete'), () => void del(), { disabled: !canMutate }),
   )
   if (isDir) {
-    items.push(<div className="menu-sep" key="s3" />, item(t('menu.openTerminal'), terminal))
+    items.push(
+      <div className="menu-sep" key="s3" />,
+      item(t('menu.openTerminal'), terminal, { disabled: missing }),
+      item(
+        pinnedHere ? t('tree.unpin') : t('tree.pin'),
+        () =>
+          pinnedHere
+            ? useQuickAccess.getState().unpin(path)
+            : useQuickAccess.getState().pin(path),
+      ),
+    )
   }
 
   // Keep the panel on screen.
