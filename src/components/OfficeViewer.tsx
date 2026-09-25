@@ -30,6 +30,7 @@ const useDocument = (path: string, parse: (buf: ArrayBuffer) => Promise<void>) =
       try {
         const buf = await invoke<ArrayBuffer>('read_bytes', { path })
         if (cancelled) return
+        useWorkspace.getState().setTabSize(path, buf.byteLength)
         await parse(buf)
         if (!cancelled) setState({ loading: false, error: null })
       } catch (err) {

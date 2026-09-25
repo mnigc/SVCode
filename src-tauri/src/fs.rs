@@ -121,8 +121,10 @@ fn decode_text(bytes: &[u8]) -> Result<(String, String, String), String> {
     Ok((text, encoding, if crlf { "crlf" } else { "lf" }.into()))
 }
 
+/// Returns the on-disk size in bytes after the write, so the UI's file-size
+/// readout stays exact (the encoding may expand or shrink the text).
 #[tauri::command]
-pub fn write_text(path: String, text: String, encoding: String, eol: String) -> Result<(), String> {
+pub fn write_text(path: String, text: String, encoding: String, eol: String) -> Result<u64, String> {
     let text = if eol == "crlf" {
         &text.replace("\r\n", "\n").replace('\n', "\r\n")
     } else {
@@ -153,7 +155,7 @@ pub fn write_text(path: String, text: String, encoding: String, eol: String) -> 
         return Err(err(e));
     }
     match fs::rename(&tmp, &path) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(bytes.len() as u64),
         Err(e) => {
             let _ = fs::remove_file(&tmp);
             Err(err(e))

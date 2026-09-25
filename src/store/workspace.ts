@@ -72,6 +72,9 @@ export interface TabInfo {
   encoding: string
   /** `crlf` | `lf`; saving restores it because the editor only speaks LF. */
   eol: string
+  /** On-disk size in bytes; text tabs learn it from read_text/write_text,
+   * binary tabs from the preview viewers' byte buffers. */
+  size: number | null
   dirty: boolean
   readOnly: boolean
   loading: boolean
@@ -163,6 +166,9 @@ interface WorkspaceState {
 
   /** Expand ancestors + select a path (search results → tree). */
   revealPath: (path: string) => Promise<void>
+  /** Expand a Quick Access folder from the top down, stubbing ancestors the
+   * tree never listed (unlike revealPath, which relies on loaded nodes). */
+  revealPinned: (path: string) => Promise<void>
   /** Bulk-expand saved directories (session restore), parents first. */
   expandDirs: (paths: string[]) => Promise<void>
   /** Reopen tabs saved by the last session; `draft` restores unsaved edits.
@@ -186,6 +192,8 @@ interface WorkspaceState {
   adjustRowSplit: (top: number, bottom: number, topGrow: number, bottomGrow: number) => void
   /** Store a viewer's zoom for one file (clamped by the caller). */
   setZoom: (path: string, zoom: number) => void
+  /** Preview viewers report the byte size they fetched (image/pdf/office). */
+  setTabSize: (path: string, size: number) => void
 
   setSidebarWidth: (px: number) => void
   setPreviewRatio: (ratio: number) => void
@@ -285,6 +293,41 @@ const confirmDiscard = (count: number): Promise<boolean> =>
         cancelLabel: t('dialog.cancel'),
       })
 
+/**
+ * Expand `chain` (top-down) inside the store, stubbing levels the tree never
+ * listed. Never collapses: already-open levels are skipped, so re-reveals
+ * (search hits, tab clicks, Quick Access) can't fold the tree back up.
+ * `toggleNode` supplies listing, expansion and watching for each new level;
+ * the walk naturally stops at the always-loaded root/drive nodes.
+ */
+async function expandRevealChain(
+  get: () => WorkspaceState,
+  set: (partial: Partial<WorkspaceState> | ((s: WorkspaceState) => Partial<WorkspaceState>)) => void,
+  chain: string[],
+): Promise<void> {
+  for (const dir of chain) {
+    if (!get().nodes[dir]) {
+      set((s) => ({ nodes: { ...s.nodes, [dir]: node(dir, basename(dir), true) } }))
+    }
+    const n = get().nodes[dir]
+    if ((n.expanded && n.children) || n.access === 'denied') continue
+    await get().toggleNode(dir)
+  }
+}
+
+/** Ancestor chain of `path` down from the tree root, `path` excluded. */
+function ancestorChain(path: string): string[] {
+  const chain: string[] = []
+  let cur = dirname(path)
+  while (cur && cur !== ROOT && cur !== THIS_PC) {
+    chain.unshift(cur)
+    const parent = dirname(cur)
+    if (parent === cur) break
+    cur = parent
+  }
+  return chain
+}
+
 export const useWorkspace = create<WorkspaceState>((set, get) => {
   const patch = (path: string, changes: Partial<NodeInfo>) =>
     set((s) => ({ nodes: { ...s.nodes, [path]: { ...s.nodes[path], ...changes } } }))
@@ -303,6 +346,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       lineCount: 1,
       encoding: 'utf-8',
       eol: 'lf',
+      size: null,
       dirty: false,
       readOnly: false,
       loading: kind === 'text' || kind === 'markdown',
@@ -324,6 +368,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
                 lineCount: countLines(content.text),
                 encoding: content.encoding,
                 eol: content.eol,
+                size: content.size,
                 readOnly: content.readOnly,
                 loading: false,
               }
@@ -621,7 +666,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       )
       if (!tab || !tab.dirty || tab.readOnly) return
       try {
-        await invoke('write_text', {
+        const newSize = await invoke<number>('write_text', {
           path: tab.path,
           text: tab.text,
           encoding: tab.encoding,
@@ -630,7 +675,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         set((s) => ({
           notice: null,
           tabs: s.tabs.map((t) =>
-            t.path === tab.path ? { ...t, dirty: false, original: t.text } : t,
+            t.path === tab.path ? { ...t, dirty: false, original: t.text, size: newSize } : t,
           ),
         }))
       } catch (err) {
@@ -639,30 +684,31 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     },
 
     revealPath: async (path) => {
-      // Collect ancestors from the tree root down; stop at the first one that
-      // is already loaded so the common case costs no IPC.
-      const chain: string[] = []
-      let cur = dirname(path)
-      while (cur && cur !== ROOT && cur !== THIS_PC && get().nodes[cur]) {
-        chain.unshift(cur)
-        const parent = dirname(cur)
-        if (parent === cur || (IS_WINDOWS && isRootPath(cur))) break
-        cur = parent
-      }
-      for (const dir of chain) {
-        const node = get().nodes[dir]
-        if (!node) break
-        if (node.children) {
-          patch(dir, { expanded: true })
-        } else {
-          // Toggle through the store action so listing + expansion stay in sync.
-          set((s) => ({ nodes: { ...s.nodes, [dir]: { ...node, expanded: false } } }))
-          await get().toggleNode(dir)
-        }
-        set({ selectedDir: dir })
-      }
+      // Expand the ancestor chain (stubbing never-listed levels — a file
+      // opened via search can live in an unopened drive), select the parent,
+      // and expand the target itself when it is a folder. Never collapses.
+      set({ selectedDir: dirname(path), notice: null })
+      await expandRevealChain(get, set, ancestorChain(path))
       const target = get().nodes[path]
-      if (target?.isDir) await get().toggleNode(path)
+      if (
+        target?.isDir &&
+        target.access !== 'denied' &&
+        !(target.expanded && target.children)
+      ) {
+        await get().toggleNode(path)
+      }
+    },
+
+    revealPinned: async (path) => {
+      // Quick Access reveal: same expand-only walk, but the pinned folder
+      // itself is the target (chain includes it) and it owns the selection.
+      set({ selectedDir: path, notice: null })
+      await expandRevealChain(get, set, ancestorChain(path))
+      const target = get().nodes[path]
+      if (!target) return
+      if (target.access !== 'denied' && !(target.expanded && target.children)) {
+        await get().toggleNode(path)
+      }
     },
 
     expandDirs: async (paths) => {
@@ -1019,6 +1065,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       })),
 
     setZoom: (path, zoom) => set((s) => ({ zoom: { ...s.zoom, [path]: zoom } })),
+    setTabSize: (path, size) =>
+      set((s) => ({
+        tabs: s.tabs.map((t) => (t.path === path && t.size === null ? { ...t, size } : t)),
+      })),
   }
 })
 

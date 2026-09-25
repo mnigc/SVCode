@@ -1,9 +1,22 @@
 import type { ReactNode } from 'react'
 import { useWorkspace, hasPreview, type GroupView, type TabInfo } from '../store/workspace'
-import { kindLabel } from '../lib/paths'
+import { extname, kindLabel } from '../lib/paths'
 import { useT, tBackend } from '../lib/i18n'
 import { officeNoteKey } from './OfficeViewer'
 import { ZOOM_STEP, clampZoom, type ZoomKind } from '../lib/viewerZoom'
+
+/** Human-readable byte size for the group status bar (B → GB). */
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB']
+  let v = bytes / 1024
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[i]}`
+}
 
 /**
  * Global status bar: workspace-level state only (folder, notice, total tab
@@ -50,11 +63,12 @@ function OfficeNoteCell({ tab }: { tab: { kind: string; path: string } }) {
   )
 }
 
-/** − %/＋ zoom controls for image/pdf/office tabs; drives the same store
- * zoom the viewer renders with (the % label click = reset to fit). */
+/** − %/＋ zoom controls for image/pdf/office (and SVG preview) tabs; drives
+ * the same store zoom the viewer renders with (the % label click = reset to
+ * fit). */
 function ZoomCells({ tab }: { tab: TabInfo }) {
   const t = useT()
-  const kind = (tab.kind === 'image' || tab.kind === 'pdf' ? tab.kind : 'office') as ZoomKind
+  const kind: ZoomKind = tab.kind === 'pdf' ? 'pdf' : tab.kind === 'office' ? 'office' : 'image'
   const zoom = useWorkspace((s) => s.zoom[tab.path] ?? 1)
   const set = (next: number) =>
     useWorkspace.getState().setZoom(tab.path, clampZoom(kind, next))
@@ -142,11 +156,16 @@ export function GroupStatusBar({ groupId }: { groupId: number }) {
     return s.tabs.find((t) => t.group === groupId && t.path === active) ?? null
   })
   if (!tab) return null
-  const zoomable = tab.kind === 'image' || tab.kind === 'pdf' || tab.kind === 'office'
+  const zoomable =
+    tab.kind === 'image' ||
+    tab.kind === 'pdf' ||
+    tab.kind === 'office' ||
+    (tab.kind === 'text' && extname(tab.path) === 'svg')
 
   return (
     <div className="group-statusbar">
       <span className="status-cell">{kindLabel(tab.kind)}</span>
+      {tab.size !== null && <span className="status-cell">{formatSize(tab.size)}</span>}
       {tab.encoding !== 'utf-8' && <span className="status-cell">{tab.encoding}</span>}
       {(tab.kind === 'text' || tab.kind === 'markdown') && (
         <>

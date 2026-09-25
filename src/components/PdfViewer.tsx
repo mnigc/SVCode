@@ -43,6 +43,7 @@ export function PdfViewer({ path, isActive }: { path: string; isActive: boolean 
 
         const buf = await invoke<ArrayBuffer>('read_bytes', { path })
         if (cancelled) return
+        useWorkspace.getState().setTabSize(path, buf.byteLength)
 
         const task = pdfjs.getDocument({ data: new Uint8Array(buf) })
         loadingTask = task
