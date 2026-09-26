@@ -4,6 +4,7 @@ import { useWorkspace } from '../store/workspace'
 import { useSettings, type ThemeName } from '../lib/settings'
 import { useT, type TextKey } from '../lib/i18n'
 import { useUpdate } from '../lib/update'
+import { saveSessionNow } from '../lib/session'
 import { AboutDialog } from './AboutDialog'
 import { SettingsDialog } from './SettingsDialog'
 import { NetworkLocationDialog } from './NetworkLocationDialog'
@@ -16,6 +17,15 @@ interface MenuEntry {
   disabled?: boolean
   checked?: boolean
   onSelect?: () => void
+}
+
+/** 刷新 = reload the whole webview. The session (open tabs, unsaved drafts,
+ *  layout) is persisted first — restoreSession brings it all back on boot —
+ *  so the reload is as safe as an app restart. */
+function reloadApp() {
+  void saveSessionNow()
+    .catch(() => {})
+    .then(() => window.location.reload())
 }
 
 export function TitleBar() {
@@ -32,14 +42,20 @@ export function TitleBar() {
   // menu item shows the version, so nothing interrupts the user outright.
   const updateVersion = useUpdate((s) => (s.phase === 'available' ? s.update?.version : undefined))
 
-  // Global shortcut: Ctrl+, opens Settings (works even when the editor has
-  // focus — it's a key the editor never uses).
+  // Global shortcuts: Ctrl+, opens Settings (works even when the editor has
+  // focus — it's a key the editor never uses); Ctrl+R / F5 are taken over
+  // from WebView2's reload accelerator so they run our session-safe reload
+  // instead of dropping the page (and every unsaved edit with it).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === ',') {
         e.preventDefault()
         setOpenMenu(null)
         setSettingsOpen(true)
+      } else if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') || e.key === 'F5') {
+        e.preventDefault()
+        setOpenMenu(null)
+        reloadApp()
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -102,6 +118,12 @@ export function TitleBar() {
       { label: t('menu.exit'), onSelect: () => void win.close() },
     ],
     [t('menu.view')]: [
+      {
+        label: t('menu.refresh'),
+        hint: 'Ctrl+R',
+        onSelect: reloadApp,
+      },
+      { separator: true },
       ...([
         ['dark', 'theme.dark'],
         ['light', 'theme.light'],

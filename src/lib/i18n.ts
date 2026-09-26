@@ -18,6 +18,7 @@ const dict = {
   'theme.auto': { zh: '跟随系统', en: 'Follow System' },
   'menu.wordWrap': { zh: '自动换行', en: 'Word Wrap' },
   'menu.showHidden': { zh: '显示隐藏文件', en: 'Show Hidden Files' },
+  'menu.refresh': { zh: '刷新', en: 'Refresh' },
   'menu.help': { zh: '帮助', en: 'Help' },
   'menu.checkUpdate': { zh: '检查更新', en: 'Check for Updates' },
   'menu.about': { zh: '关于 SVCode', en: 'About SVCode' },

@@ -494,9 +494,13 @@
 }
 
 /* Focused-group cue: accent-tinted border (shown only when several groups
-   exist — App skips the class for a single group). */
+   exist — App skips the class for a single group). A translucent ring just
+   outside the border thickens the cue to a readable ~2px. */
 .pane-editor.is-active {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-color: var(--accent);
+  box-shadow:
+    var(--shadow-card),
+    0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* Editor area: rows stack top to bottom, each row holds its groups left to
@@ -789,7 +793,7 @@
   height: 62px;
   margin-bottom: 16px;
   border-radius: 14px;
-  filter: drop-shadow(0 6px 20px color-mix(in srgb, var(--accent) 25%, transparent));
+  filter: drop-shadow(0 6px 20px color-mix(in srgb, #ffcf5c 35%, transparent));
 }
 
 .welcome-logo img {
