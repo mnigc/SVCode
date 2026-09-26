@@ -31,7 +31,7 @@ Fix a config, glance at a log, tweak a script, peek at a doc — a full IDE is o
 is too crude. SVCode lives in that gap: **starts in seconds, shows what you open, saves as you
 edit.**
 
-- Starts in seconds; installer **under 3 MB**; ~100 MB RAM per instance
+- Starts in seconds; installer **under 4 MB**; ~100 MB RAM at idle
 - No "open workspace" step: the file tree shows your **entire disk** from launch
 - When you need completion, LSP or plugins, use a full IDE — SVCode only does **open fast, view
   fast, fix fast**
@@ -70,6 +70,8 @@ Three tiers with automatic fallback:
 
 ### 🌏 Also
 - Dark / light / follow-system theme; English & Simplified Chinese UI
+- **Auto-update**: a signed background check against GitHub Releases once a day, installable from
+  inside the app with download progress
 - Session restore: tabs, groups and layout survive restarts — **unsaved drafts too**, nothing lost
 - Right-click "Open in Terminal"; files save back in their original encoding (UTF-8 / UTF-16 /
   GBK); characters the encoding can't represent refuse to save instead of corrupting the file
@@ -77,10 +79,10 @@ Three tiers with automatic fallback:
 ## Download
 
 Grab the latest installer from [**Releases**](https://github.com/mnigc/SVCode/releases/latest) —
-the whole editor ships in a download smaller than a photo:
+the whole editor ships in a download of just a few megabytes:
 
-- `SVCode_x.y.z_x64-setup.exe` — NSIS installer, **≈ 2.6 MB** (recommended)
-- `SVCode_x.y.z_x64_en-US.msi` — MSI package, **≈ 3.2 MB**
+- `SVCode_x.y.z_x64-setup.exe` — NSIS installer, **≈ 3.6 MB** (recommended)
+- `SVCode_x.y.z_x64_en-US.msi` — MSI package, **≈ 4.7 MB**
 
 Requires Windows 10 or later (renders with the bundled WebView2).
 
