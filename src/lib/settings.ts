@@ -25,6 +25,8 @@ export interface SettingsValues {
   /** UNC paths (\\server\share…) mounted under 此电脑, Windows only. */
   netLocations: string[]
   searchScope: SearchScope
+  /** Close button hides to the tray (background) instead of quitting. */
+  closeToTray: boolean
 }
 
 export const DEFAULT_SETTINGS: SettingsValues = {
@@ -38,6 +40,7 @@ export const DEFAULT_SETTINGS: SettingsValues = {
   defaultView: 'both',
   netLocations: [],
   searchScope: 'all',
+  closeToTray: true,
 }
 
 const PERSIST_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof SettingsValues)[]

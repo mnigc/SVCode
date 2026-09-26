@@ -19,6 +19,12 @@ const dict = {
   'menu.wordWrap': { zh: '自动换行', en: 'Word Wrap' },
   'menu.showHidden': { zh: '显示隐藏文件', en: 'Show Hidden Files' },
   'menu.refresh': { zh: '刷新', en: 'Refresh' },
+  'settings.window': { zh: '窗口', en: 'Window' },
+  'settings.closeToTray': { zh: '关闭时最小化到托盘', en: 'Close to Tray' },
+  'settings.closeToTray.desc': {
+    zh: '点关闭按钮后保留在系统托盘后台运行；托盘图标左键唤起窗口，右键可退出。',
+    en: 'Keep running in the system tray after closing the window. Left-click the tray icon to reopen, right-click to quit.',
+  },
   'menu.help': { zh: '帮助', en: 'Help' },
   'menu.checkUpdate': { zh: '检查更新', en: 'Check for Updates' },
   'menu.about': { zh: '关于 SVCode', en: 'About SVCode' },

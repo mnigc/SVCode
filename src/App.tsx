@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { listen } from '@tauri-apps/api/event'
+import { invoke } from '@tauri-apps/api/core'
 import { useWorkspace, activePathOf, flatGroups, hasPreview } from './store/workspace'
 import { useQuickAccess } from './store/quickAccess'
 import { Sidebar } from './components/Sidebar'
@@ -63,6 +64,13 @@ export default function App() {
       }),
     [],
   )
+
+  // Mirror the close-to-tray setting into the backend, which owns the
+  // window-close decision (default true fires once on mount — harmless).
+  const closeToTray = useSettings((s) => s.closeToTray)
+  useEffect(() => {
+    void invoke('set_close_to_tray', { enabled: closeToTray })
+  }, [closeToTray])
 
   // External mutations of watched (expanded) directories → refresh the tree;
   // touched file paths → reload matching open tabs (unless they have unsaved

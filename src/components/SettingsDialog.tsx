@@ -122,6 +122,16 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
             </Row>
           </Section>
 
+          <Section label={t('settings.window')}>
+            <Row name={t('settings.closeToTray')} desc={t('settings.closeToTray.desc')}>
+              <Switch
+                on={s.closeToTray}
+                label={t('settings.closeToTray')}
+                onChange={(v) => patch({ closeToTray: v })}
+              />
+            </Row>
+          </Section>
+
           <Section label={t('settings.search')}>
             <Row name={t('settings.searchScope')} desc={t('settings.searchScope.desc')}>
               <Seg<SearchScope>

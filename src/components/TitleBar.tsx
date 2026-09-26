@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { invoke } from '@tauri-apps/api/core'
 import { useWorkspace } from '../store/workspace'
 import { useSettings, type ThemeName } from '../lib/settings'
 import { useT, type TextKey } from '../lib/i18n'
@@ -115,7 +116,9 @@ export function TitleBar() {
         onSelect: () => setSettingsOpen(true),
       },
       { separator: true },
-      { label: t('menu.exit'), onSelect: () => void win.close() },
+      // Real quit via the backend: a plain win.close() is intercepted by the
+      // close-to-tray handler and would only hide the window.
+      { label: t('menu.exit'), onSelect: () => void invoke('quit_app') },
     ],
     [t('menu.view')]: [
       {
