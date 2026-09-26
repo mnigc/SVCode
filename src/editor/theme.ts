@@ -73,31 +73,70 @@ export const svcodeTheme = EditorView.theme(
     '.cm-panels.cm-panels-top': {
       borderBottom: '1px solid var(--border)',
     },
-    '.cm-panel.cm-search': {
-      padding: '6px 10px',
+    // SVCode's own search panel (src/editor/searchPanel.ts) — the default
+    // .cm-panel.cm-search is replaced via the search extension's createPanel.
+    '.sv-search': {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '6px',
+      padding: '8px 12px',
       fontSize: '12px',
     },
-    '.cm-panel.cm-search input, .cm-panel.cm-search button': {
+    '.sv-search-row': {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+    },
+    '.sv-search-field': {
       font: 'inherit',
       color: 'var(--fg)',
       background: 'var(--bg-card)',
       border: '1px solid var(--border-strong)',
       borderRadius: '6px',
-      padding: '3px 6px',
-      marginRight: '4px',
+      padding: '4px 8px',
+      width: '220px',
     },
-    '.cm-panel.cm-search label': {
+    '.sv-search-field:focus': {
+      outline: 'none',
+      borderColor: 'var(--accent)',
+    },
+    '.sv-search-btn, .sv-search-toggle': {
+      font: 'inherit',
       color: 'var(--fg-dim)',
-      marginRight: '8px',
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border-strong)',
+      borderRadius: '6px',
+      padding: '4px 9px',
+      cursor: 'pointer',
+      whiteSpace: 'nowrap',
     },
-    '.cm-panel.cm-search button:hover': {
+    '.sv-search-btn:hover, .sv-search-toggle:hover': {
       background: 'var(--bg-hover)',
+      color: 'var(--fg)',
     },
-    '.cm-panel.cm-search button[name="close"]': {
+    '.sv-search-toggle.is-active': {
+      color: 'var(--accent)',
+      borderColor: 'var(--accent)',
+      background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+    },
+    '.sv-search-count': {
+      color: 'var(--fg-faint)',
+      // Pushes the count to the right end of the row, ahead of the ✕.
+      marginLeft: 'auto',
+      fontVariantNumeric: 'tabular-nums',
+      whiteSpace: 'nowrap',
+    },
+    '.sv-search-close': {
       border: 'none',
       background: 'none',
       color: 'var(--fg-faint)',
+      cursor: 'pointer',
       fontSize: '14px',
+      padding: '2px 6px',
+      marginLeft: '2px',
+    },
+    '.sv-search-close:hover': {
+      color: 'var(--fg)',
     },
     '.cm-tooltip': {
       background: 'var(--bg-raised)',

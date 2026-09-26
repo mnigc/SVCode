@@ -327,8 +327,26 @@ pub fn move_path(src: String, dest: String) -> Result<(), String> {
     }
 }
 
-fn decode(bytes: &[u8]) -> Result<(String, String), String> {
-    if let Some(rest) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
+/// True when `bytes` contain a GB18030 four-byte sequence (b1 0x81–0xFE,
+/// b2 0x30–0x39, b3 0x81–0xFE, b4 0x30–0x39). Only used to pick the label
+/// after a successful GBK decode — see `decode`.
+fn has_gb18030_quad(bytes: &[u8]) -> bool {
+    let b = bytes;
+    let mut i = 0;
+    while i + 3 < b.len() {
+        if (0x81..=0xFE).contains(&b[i])
+            && (0x30..=0x39).contains(&b[i + 1])
+            && (0x81..=0xFE).contains(&b[i + 2])
+            && (0x30..=0x39).contains(&b[i + 3])
+        {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+fn decode(bytes: &[u8]) -> Result<(String, String), String> {    if let Some(rest) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
         return Ok((String::from_utf8_lossy(rest).into_owned(), "utf-8-bom".into()));
     }
     if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
@@ -349,7 +367,23 @@ fn decode(bytes: &[u8]) -> Result<(String, String), String> {
     // Chinese Windows puts a lot of plain text in GBK; try it before anything lossy.
     if let Some(cow) = encoding_rs::GBK.decode_without_bom_handling_and_without_replacement(bytes)
     {
-        return Ok((cow.into_owned(), "gbk".into()));
+        // encoding_rs's GBK decoder also accepts GB18030 4-byte sequences,
+        // but its GBK encoder cannot produce them — such a file would open
+        // fine and then refuse to save. Label those gb18030 (plain GBK
+        // content encodes byte-identically under either).
+        let label = if has_gb18030_quad(bytes) { "gb18030" } else { "gbk" };
+        return Ok((cow.into_owned(), label.into()));
+    }
+    // Remaining strict attempts (no replacement) so a decodable file is never
+    // shown lossy. windows-1252 maps EVERY byte, so it is the last stop and
+    // the lossy branch below stays as a belt for anything exotic.
+    for label in ["gb18030", "windows-1252"] {
+        let Some(enc) = encoding_rs::Encoding::for_label(label.as_bytes()) else {
+            continue;
+        };
+        if let Some(cow) = enc.decode_without_bom_handling_and_without_replacement(bytes) {
+            return Ok((cow.into_owned(), label.into()));
+        }
     }
     Ok((
         String::from_utf8_lossy(bytes).into_owned(),
@@ -569,6 +603,32 @@ mod tests {
         let (out, got) = decode(&bytes).unwrap();
         assert_eq!(out, text);
         assert_eq!(got, "gbk");
+    }
+
+    #[test]
+    fn round_trip_gb18030() {
+        // U+20000 has no GBK mapping (it needs GB18030's 4-byte sequences),
+        // so the GBK attempt must fail and fall through to gb18030.
+        let text = "生僻字：\u{20000}".to_string();
+        assert!(encode(&text, "gbk").is_err());
+        let bytes = encode(&text, "gb18030").unwrap();
+        let (out, got) = decode(&bytes).unwrap();
+        assert_eq!(out, text);
+        assert_eq!(got, "gb18030");
+    }
+
+    #[test]
+    fn decode_falls_back_to_windows_1252() {
+        // Latin-1 "Café": invalid UTF-8, and the trailing 0xE9 has no GBK
+        // continuation — the all-bytes-mapping CP1252 decode names it.
+        let (out, enc) = decode(&[0x43, 0x61, 0x66, 0xE9]).unwrap();
+        assert_eq!(out, "Café");
+        assert_eq!(enc, "windows-1252");
+    }
+
+    #[test]
+    fn encode_cp1252_rejects_unrepresentable() {
+        assert!(encode("中文", "windows-1252").is_err());
     }
 
     #[test]

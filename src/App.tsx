@@ -64,11 +64,18 @@ export default function App() {
     [],
   )
 
-  // External mutations of watched (expanded) directories → refresh the tree.
+  // External mutations of watched (expanded) directories → refresh the tree;
+  // touched file paths → reload matching open tabs (unless they have unsaved
+  // edits). The payload used to be a bare dir array — accept both shapes.
   useEffect(() => {
     let unlisten: (() => void) | undefined
-    void listen<string[]>('fs:change', (event) => {
-      void useWorkspace.getState().handleFsChanges(event.payload)
+    void listen<{ dirs: string[]; files: string[] }>('fs:change', (event) => {
+      const payload = event.payload as { dirs: string[]; files: string[] } | string[]
+      const dirs = Array.isArray(payload) ? payload : payload.dirs
+      const files = Array.isArray(payload) ? [] : payload.files
+      const ws = useWorkspace.getState()
+      void ws.handleFsChanges(dirs)
+      void ws.handleFileChanges(files)
     }).then((stop) => {
       unlisten = stop
     })

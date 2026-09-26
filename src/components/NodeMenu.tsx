@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react'
 import { create } from 'zustand'
+import { openPath } from '@tauri-apps/plugin-opener'
 import { useWorkspace, THIS_PC, IS_WINDOWS, type NodeInfo } from '../store/workspace'
 import { useQuickAccess } from '../store/quickAccess'
 import { useSettings } from '../lib/settings'
 import { basename, dirname, isRootPath, isUncShareRoot } from '../lib/paths'
-import { useT } from '../lib/i18n'
+import { useT, t } from '../lib/i18n'
 
 /**
  * Inline create/rename editing state for the file tree, shared so any entry
@@ -27,6 +28,17 @@ export const useTreeEditing = create<TreeEditingState>((set) => ({
   editing: null,
   set: (editing) => set({ editing }),
 }))
+
+/**
+ * Hand a file to the Windows default application (opener plugin). Shared by
+ * the context menu and the tree row's double-click; failures surface in the
+ * status-bar notice.
+ */
+export function openExternal(path: string) {
+  void openPath(path).catch((err) => {
+    useWorkspace.setState({ notice: t('card.openFailed', { msg: String(err) }) })
+  })
+}
 
 /**
  * Context menu for one file-system node, rendered fixed at the cursor. Used
@@ -154,6 +166,7 @@ export function NodeMenu({
     items.push(
       item(t('tree.open'), () => void ws.openFile(path)),
       item(t('tree.openToSide'), () => void ws.openToSide(path)),
+      item(t('tree.openExternal'), () => openExternal(path)),
     )
   }
   // Copying a whole drive is not a real workflow, and pinning one to Quick

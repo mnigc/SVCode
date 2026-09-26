@@ -32,6 +32,7 @@ import { useWorkspace, type TabInfo } from '../store/workspace'
 import { useSettings } from '../lib/settings'
 import { svcodeTheme, svcodeHighlight } from '../editor/theme'
 import { loadLanguage } from '../editor/langs'
+import { svcodeSearchPanel } from '../editor/searchPanel'
 
 /**
  * Stashed editor states per tab, so switching tabs keeps scroll position,
@@ -74,7 +75,7 @@ function baseExtensions(tab: TabInfo): Extension[] {
     rectangularSelection(),
     crosshairCursor(),
     highlightSelectionMatches(),
-    search({ top: true }),
+    search({ top: true, createPanel: svcodeSearchPanel }),
     EditorState.allowMultipleSelections.of(true),
     svcodeTheme,
     svcodeHighlight,
@@ -130,6 +131,9 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
   const activeRef = useRef(active)
   activeRef.current = active
   const cancelLang = useRef<(() => void) | null>(null)
+  /** The text this view last loaded or pushed to the store — lets the reload
+   * effect tell "my own edit echoed back" from "an external change arrived". */
+  const syncedText = useRef(tab.text)
 
   // One view for the component's lifetime; states swap when the tab changes.
   useEffect(() => {
@@ -141,9 +145,11 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
           ...baseExtensions(tabRef.current),
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return
+            const text = update.state.doc.toString()
+            syncedText.current = text
             useWorkspace
               .getState()
-              .editActive(groupRef.current, update.state.doc.toString(), update.state.doc.lines)
+              .editActive(groupRef.current, text, update.state.doc.lines)
           }),
         ],
       }),
@@ -194,6 +200,7 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
     if (currentPath.current !== tab.path) {
       stash(currentPath.current, v.state)
       currentPath.current = tab.path
+      syncedText.current = tab.text
       const cached = stateCache.get(tab.path)
       if (cached && cached.doc.toString() === tab.text) {
         v.setState(cached)
@@ -211,6 +218,28 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab.path, tab.text, tab.readOnly])
+
+  // External auto-reload: the store text changed without coming from this
+  // view (the watcher pulled in an on-disk change). Replace the doc in place
+  // — one undo step brings the previous content back.
+  useEffect(() => {
+    const v = view.current
+    if (!v || currentPath.current !== tab.path) return
+    if (tab.text === syncedText.current) return
+    syncedText.current = tab.text
+    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: tab.text } })
+  }, [tab.text])
+
+  // Read-only is learned asynchronously (read_text reports it after the tab
+  // was created editable) and can change on reload — keep the compartment in
+  // sync either way.
+  useEffect(() => {
+    view.current?.dispatch({
+      effects: readOnlyComp.reconfigure(
+        tab.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [],
+      ),
+    })
+  }, [tab.readOnly])
 
   // Settings live-reconfigure without touching history.
   const tabSize = useSettings((s) => s.tabSize)

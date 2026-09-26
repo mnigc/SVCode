@@ -162,6 +162,9 @@ interface WorkspaceState {
   reloadDir: (dir: string) => Promise<void>
   /** Re-list externally-mutated watched dirs; prune them if deleted. */
   handleFsChanges: (dirs: string[]) => Promise<void>
+  /** Reload open tabs whose files changed on disk; dirty tabs are kept with
+   * a notice instead of being overwritten. */
+  handleFileChanges: (files: string[]) => Promise<void>
   /** Drop a deleted-externally node from the tree (tabs are kept). */
   pruneNode: (path: string) => void
   createNode: (dir: string, type: 'file' | 'dir', name: string) => Promise<void>
@@ -392,6 +395,43 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     }
   }
 
+  /** Re-read a tab after an external on-disk change. Identical content is a
+   * no-op (the watcher echo of our own save must not touch the view), a real
+   * change resets the buffer as clean, and an unreadable file keeps its
+   * content plus a notice — deletion must not silently drop what the user
+   * is viewing. */
+  const reloadTab = async (path: string) => {
+    try {
+      const content = await invoke<TextContent>('read_text', { path })
+      set((s) => ({
+        tabs: s.tabs.map((tab) => {
+          if (tab.path !== path) return tab
+          if (
+            tab.text === content.text &&
+            tab.encoding === content.encoding &&
+            tab.eol === content.eol
+          ) {
+            return tab.size === content.size ? tab : { ...tab, size: content.size }
+          }
+          return {
+            ...tab,
+            text: content.text,
+            original: content.text,
+            lineCount: countLines(content.text),
+            encoding: content.encoding,
+            eol: content.eol,
+            size: content.size,
+            readOnly: content.readOnly,
+            loading: false,
+            error: null,
+          }
+        }),
+      }))
+    } catch {
+      set({ notice: t('ws.reloadFailed', { name: basename(path) }) })
+    }
+  }
+
   /** Focus `path` in the group it lives in (tab exists somewhere). */
   const focusTab = (path: string, group: number) =>
     set((s) => ({ activeGroup: group, groupActive: { ...s.groupActive, [group]: path } }))
@@ -442,6 +482,36 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       }
       return { nodes: { ...nodes, ...moved }, tabs, groupActive, zoom }
     })
+
+  /**
+   * Parent dirs of open text tabs, watched so external edits reach the
+   * editor even when the tree has the folder collapsed. Diffs against the
+   * Rust refcount map, so the tree's own watches on expanded dirs coexist:
+   * the OS watch only dies when both sides release it. Keys are
+   * case-folded on Windows; values keep the original casing, which the
+   * Rust map needs to match the original watch_dir call.
+   */
+  const tabWatches = new Map<string, string>()
+  const syncTabWatches = () => {
+    const wanted = new Map<string, string>()
+    for (const tab of get().tabs) {
+      if (tab.kind !== 'text' && tab.kind !== 'markdown') continue
+      const dir = dirname(tab.path)
+      wanted.set(IS_WINDOWS ? dir.toLowerCase() : dir, dir)
+    }
+    for (const [key, dir] of tabWatches) {
+      if (!wanted.has(key)) {
+        tabWatches.delete(key)
+        void invoke('unwatch_dir', { path: dir }).catch(() => {})
+      }
+    }
+    for (const [key, dir] of wanted) {
+      if (!tabWatches.has(key)) {
+        tabWatches.set(key, dir)
+        void invoke('watch_dir', { path: dir }).catch(() => {})
+      }
+    }
+  }
 
   return {
     nodes: {},
@@ -604,6 +674,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     const tab = beginTab(path, group)
     set((s) => ({ tabs: [...s.tabs, tab], groupActive: { ...s.groupActive, [group]: path } }))
     if (!tab.loading) return
+    syncTabWatches()
     await readTab(path)
   },
 
@@ -638,6 +709,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       notice: null,
     })
     if (!tab.loading) return
+    syncTabWatches()
     await readTab(path)
   },
 
@@ -662,6 +734,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       if (!tab) return
       if (!(await confirmDiscard(tab.dirty ? 1 : 0))) return
       set((s) => dropTabs(s, (t) => t.path === path))
+      syncTabWatches()
     },
 
     closeAllTabs: async () => {
@@ -670,6 +743,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       if (groupTabs.length === 0) return
       if (!(await confirmDiscard(groupTabs.filter((t) => t.dirty).length))) return
       set((s) => dropTabs(s, (t) => t.group === s.activeGroup))
+      syncTabWatches()
     },
 
     closeOthers: async (path) => {
@@ -679,6 +753,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       if (!(await confirmDiscard(doomed.filter((t) => t.dirty).length))) return
       const drop = new Set(doomed.map((t) => t.path))
       set((s) => dropTabs(s, (t) => drop.has(t.path)))
+      syncTabWatches()
       focusTab(path, tab.group)
     },
 
@@ -692,6 +767,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       if (!(await confirmDiscard(doomed.filter((t) => t.dirty).length))) return
       const drop = new Set(doomed.map((t) => t.path))
       set((s) => dropTabs(s, (t) => drop.has(t.path)))
+      syncTabWatches()
     },
 
     editActive: (group, text, lineCount) =>
@@ -792,6 +868,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       const g = group ?? get().activeGroup
       const tab = beginTab(path, g)
       set((s) => ({ tabs: [...s.tabs, tab], groupActive: { ...s.groupActive, [g]: path } }))
+      syncTabWatches()
       if (!tab.loading) return
 
       // A draft means the last session closed with unsaved edits — restore the
@@ -852,6 +929,25 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       }
     },
 
+    handleFileChanges: async (files) => {
+      if (files.length === 0) return
+      const norm = (p: string) => (IS_WINDOWS ? p.toLowerCase() : p)
+      const changed = new Set(files.map(norm))
+      const targets = get().tabs.filter(
+        (tab) => (tab.kind === 'text' || tab.kind === 'markdown') && changed.has(norm(tab.path)),
+      )
+      if (targets.length === 0) return
+      for (const tab of targets) {
+        if (!tab.dirty) await reloadTab(tab.path)
+      }
+      // Dirty tabs keep the user's buffer — silently overwriting edits is
+      // the one thing an auto-reload must never do.
+      const conflicts = targets.filter((tab) => tab.dirty)
+      if (conflicts.length > 0) {
+        set({ notice: t('ws.externalChange', { name: conflicts[0].name }) })
+      }
+    },
+
     pruneNode: (path) => {
       void invoke('unwatch_dir', { path }).catch(() => {})
       set((s) => {
@@ -891,6 +987,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         await invoke('rename_path', { oldPath: path, newPath })
         relocate(path, newPath)
         await get().reloadDir(dir)
+        syncTabWatches()
       } catch (err) {
         set({ notice: describe(err) })
       }
@@ -914,6 +1011,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         })
         const parent = dirname(path)
         if (parent && get().nodes[parent]) await get().reloadDir(parent)
+        syncTabWatches()
       } catch (err) {
         set({ notice: t('ws.deleteFailed', { msg: describe(err) }) })
       }
@@ -945,6 +1043,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           set({ clipboard: null })
         }
         await get().reloadDir(dir)
+        syncTabWatches()
       } catch (err) {
         set({ notice: describe(err) })
       }

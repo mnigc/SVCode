@@ -176,6 +176,19 @@ const dict = {
   'pane.loading': { zh: '读取中…', en: 'Loading…' },
   'pane.readonly': { zh: '文件超过 5MB，已按只读打开。', en: 'File exceeds 5 MB and was opened read-only.' },
 
+  // editor search/replace panel (CodeMirror createPanel)
+  'editorSearch.find': { zh: '查找', en: 'Find' },
+  'editorSearch.replace': { zh: '替换', en: 'Replace' },
+  'editorSearch.prev': { zh: '上一个', en: 'Previous' },
+  'editorSearch.next': { zh: '下一个', en: 'Next' },
+  'editorSearch.all': { zh: '全部', en: 'All' },
+  'editorSearch.replaceOne': { zh: '替换', en: 'Replace' },
+  'editorSearch.replaceAll': { zh: '全部替换', en: 'Replace All' },
+  'editorSearch.case': { zh: '区分大小写', en: 'Match case' },
+  'editorSearch.regexp': { zh: '正则表达式', en: 'Regular expression' },
+  'editorSearch.word': { zh: '全词匹配', en: 'Whole word' },
+  'editorSearch.close': { zh: '关闭 (Esc)', en: 'Close (Esc)' },
+
   // preview pane
   'preview.title': { zh: '预览', en: 'Preview' },
   'viewmode.label': { zh: '视图模式', en: 'View mode' },
@@ -194,6 +207,7 @@ const dict = {
   'tree.newFile': { zh: '新建文件', en: 'New File' },
   'tree.newFolder': { zh: '新建文件夹', en: 'New Folder' },
   'tree.open': { zh: '打开', en: 'Open' },
+  'tree.openExternal': { zh: '使用系统默认程序打开', en: 'Open with default app' },
   'tree.copy': { zh: '复制', en: 'Copy' },
   'tree.cut': { zh: '剪切', en: 'Cut' },
   'tree.paste': { zh: '粘贴', en: 'Paste' },
@@ -232,6 +246,14 @@ const dict = {
   },
   'ws.saveFailed': { zh: '保存失败：{msg}', en: 'Failed to save: {msg}' },
   'ws.deleteFailed': { zh: '删除失败：{msg}', en: 'Failed to delete: {msg}' },
+  'ws.externalChange': {
+    zh: '「{name}」已在磁盘上被其他程序修改，当前有未保存更改，未自动刷新',
+    en: '"{name}" was changed on disk by another program — kept your unsaved changes',
+  },
+  'ws.reloadFailed': {
+    zh: '无法重新读取「{name}」，文件可能已被删除或移动',
+    en: 'Could not re-read "{name}" — it may have been deleted or moved',
+  },
   'paste.copy': { zh: '副本', en: 'copy' },
 
   // drive type names (Rust fallback labels)

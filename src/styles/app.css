@@ -105,7 +105,9 @@
   position: absolute;
   top: 30px;
   left: 0;
-  z-index: 100;
+  /* Above CodeMirror's .cm-panels (base theme z-index: 300) — the search
+     panel used to paint over an open title-bar menu. */
+  z-index: 400;
   min-width: 210px;
   padding: 5px;
   background: var(--bg-raised);
@@ -381,7 +383,8 @@
 
 .ctx-menu {
   position: fixed;
-  z-index: 200;
+  /* Same layer as .menu-panel — above CodeMirror's panels (300). */
+  z-index: 400;
   min-width: 170px;
 }
 
@@ -1699,7 +1702,8 @@ code {
 .about-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 300;
+  /* Modal dialogs top every menu / panel layer. */
+  z-index: 500;
   display: flex;
   align-items: center;
   justify-content: center;

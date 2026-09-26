@@ -4,7 +4,7 @@ import { useSettings } from '../lib/settings'
 import { useSearch } from '../lib/search'
 import { useT, tBackend } from '../lib/i18n'
 import { NodeIcon } from './NodeIcon'
-import { NodeMenu, useTreeEditing } from './NodeMenu'
+import { NodeMenu, useTreeEditing, openExternal } from './NodeMenu'
 
 /** How long the collapse animation runs before unmounting the rows. */
 const COLLAPSE_MS = 180
@@ -108,6 +108,9 @@ function TreeNode({ path, depth, ctx }: { path: string; depth: number; ctx: Tree
         // Quick Access reveal scrolls this row into view by path.
         data-path={path}
         onClick={onRowClick}
+        // A double-click on a file ALSO hands it to the system default
+        // application (the single clicks still open it in the editor).
+        onDoubleClick={node.isDir ? undefined : () => openExternal(path)}
         onContextMenu={(e) => {
           e.preventDefault()
           e.stopPropagation()
