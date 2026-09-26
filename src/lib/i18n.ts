@@ -49,6 +49,15 @@ const dict = {
     zh: '在文件树中显示系统隐藏文件（如 desktop.ini）',
     en: 'Show system-hidden files in the tree (e.g. desktop.ini)',
   },
+  'settings.search': { zh: '搜索', en: 'Search' },
+  'settings.searchScope': { zh: '文件名索引范围', en: 'File-name Index Scope' },
+  'settings.searchScope.desc': {
+    zh: '首次搜索时才开始建索引；Everything 在运行时会直接接管搜索，不占用内存',
+    en: 'The index is built on the first search, not at startup. Everything takes over when it is running.',
+  },
+  'settings.scope.off': { zh: '关闭', en: 'Off' },
+  'settings.scope.system': { zh: '仅系统盘', en: 'System drive' },
+  'settings.scope.all': { zh: '所有磁盘', en: 'All drives' },
   'settings.reset': { zh: '恢复默认设置', en: 'Reset to Defaults' },
   'settings.done': { zh: '完成', en: 'Done' },
 
@@ -72,6 +81,13 @@ const dict = {
   'about.published': { zh: '发布于 {date}', en: 'Published {date}' },
   'about.notes': { zh: '更新说明', en: 'Release notes' },
   'about.download': { zh: '前往下载', en: 'Download' },
+  'about.install': { zh: '下载并安装', en: 'Download & Install' },
+  'about.installing': { zh: '正在下载安装包…', en: 'Downloading the update…' },
+  'about.progress': { zh: '已下载 {n}%', en: '{n}% downloaded' },
+  'about.restartNote': {
+    zh: '安装程序启动后 SVCode 会退出，装完自动重新打开。',
+    en: 'SVCode quits when the installer starts and reopens once it is done.',
+  },
   'about.later': { zh: '以后再说', en: 'Later' },
   'about.retry': { zh: '重试', en: 'Retry' },
   'about.failed': { zh: '检查更新失败', en: 'Failed to check for updates' },
@@ -130,6 +146,11 @@ const dict = {
   'search.everythingReady': { zh: 'Everything 已接管搜索', en: 'Searching via Everything' },
   'search.indexed': { zh: '{n} 个文件已索引', en: '{n} files indexed' },
   'search.indexing': { zh: '正在建索引：{n} 个文件…', en: 'Building index: {n} files…' },
+  'search.scopeOff': { zh: '搜索已关闭（可在设置中开启）', en: 'Search is off (enable it in Settings)' },
+  'search.scopeOffHint': {
+    zh: '在 设置 → 搜索 → 文件名索引范围 中开启；Everything 在运行时不受此设置影响',
+    en: 'Enable it under Settings → Search → Index Scope. Everything, when running, is unaffected.',
+  },
   'search.noMatches': { zh: '没有匹配的文件', en: 'No matching files' },
   'search.truncated': {
     zh: '仅显示前 {n} 条，输入更多字符缩小范围',

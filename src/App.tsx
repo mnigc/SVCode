@@ -13,7 +13,7 @@ import { TitleBar } from './components/TitleBar'
 import { CollapsiblePane } from './components/CollapsiblePane'
 import { useSettings } from './lib/settings'
 import { restoreSession, scheduleSessionSave } from './lib/session'
-import { kickOffSearchBackend } from './lib/search'
+import { checkOnStartup } from './lib/update'
 
 export default function App() {
   const sidebarOpen = useWorkspace((s) => s.sidebarOpen)
@@ -45,8 +45,13 @@ export default function App() {
     void useSettings.getState().load().then(() => useWorkspace.getState().loadSystemTree())
     void restoreSession().catch((e) => console.error('[svcode] session restore failed:', e))
     void useQuickAccess.getState().load()
-    void kickOffSearchBackend()
-    return useWorkspace.subscribe(scheduleSessionSave)
+    // Behind a delay so the update request never competes with session restore.
+    const check = setTimeout(() => void checkOnStartup().catch(() => {}), 3000)
+    const saveSession = useWorkspace.subscribe(scheduleSessionSave)
+    return () => {
+      clearTimeout(check)
+      saveSession()
+    }
   }, [])
 
   // Tree root labels ("This PC", drive names) are stored data: re-translate

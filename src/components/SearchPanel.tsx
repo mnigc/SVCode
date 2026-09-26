@@ -3,6 +3,7 @@ import { useWorkspace } from '../store/workspace'
 import { SEARCH_LIMIT, useSearch, scopedQuery } from '../lib/search'
 import { basename, dirname } from '../lib/paths'
 import { useT } from '../lib/i18n'
+import { useSettings } from '../lib/settings'
 import { scrollIntoContainer } from '../lib/scrollIntoContainer'
 import { DIR_ICON, fileIcon } from '../lib/fileIcons'
 import { NodeIcon } from './NodeIcon'
@@ -21,6 +22,7 @@ export function SearchBox() {
   const status = useSearch((s) => s.status)
   const pendingScope = useSearch((s) => s.pendingScope)
   const refreshStatus = useSearch((s) => s.refreshStatus)
+  const searchScope = useSettings((s) => s.searchScope)
   // Drive roots have an empty basename ("C:\") — prefer the tree node's
   // display name ("系统 (C:)"), falling back to the path itself.
   const scopeName =
@@ -29,16 +31,14 @@ export function SearchBox() {
   const input = useRef<HTMLInputElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Pick the backend tier early and poll while the local index builds.
+  // One probe to learn the tier, then poll only while a local build is really
+  // running: the index now starts on the first query, so an idle session must
+  // not keep asking the backend.
   useEffect(() => {
     void refreshStatus()
     const poll = setInterval(() => {
       const st = useSearch.getState().status
-      if (st && (st.source === 'everything' || st.ready)) {
-        clearInterval(poll)
-        return
-      }
-      void refreshStatus()
+      if (st && st.source === 'local' && st.started && !st.ready) void refreshStatus()
     }, 2000)
     return () => clearInterval(poll)
   }, [refreshStatus])
@@ -113,17 +113,28 @@ export function SearchBox() {
           </button>
         )}
       </div>
-      {status && !query.trim() && (
-        <div
-          className="search-status"
-          title={status.source === 'everything' ? t('search.viaEverything') : t('search.viaLocal')}
-        >
-          {status.source === 'everything'
-            ? t('search.everythingReady')
-            : status.ready
-              ? t('search.indexed', { n: status.files.toLocaleString() })
-              : t('search.indexing', { n: status.files.toLocaleString() })}
+      {searchScope === 'off' && status?.source !== 'everything' ? (
+        // Scope off silences the local tier entirely — say so instead of
+        // letting queries return silent empty results. Everything, when it is
+        // running, answers regardless of the scope, hence the exception.
+        <div className="search-status" title={t('search.scopeOffHint')}>
+          {t('search.scopeOff')}
         </div>
+      ) : (
+        status &&
+        !query.trim() &&
+        (status.source === 'everything' || status.started) && (
+          <div
+            className="search-status"
+            title={status.source === 'everything' ? t('search.viaEverything') : t('search.viaLocal')}
+          >
+            {status.source === 'everything'
+              ? t('search.everythingReady')
+              : status.ready
+                ? t('search.indexed', { n: status.files.toLocaleString() })
+                : t('search.indexing', { n: status.files.toLocaleString() })}
+          </div>
+        )
       )}
     </div>
   )

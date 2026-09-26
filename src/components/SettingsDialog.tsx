@@ -4,6 +4,7 @@ import {
   useSettings,
   DEFAULT_SETTINGS,
   type LangPref,
+  type SearchScope,
   type ThemeName,
   type ViewPref,
 } from '../lib/settings'
@@ -117,6 +118,20 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                 on={s.showHidden}
                 label={t('settings.showHidden')}
                 onChange={(v) => patch({ showHidden: v })}
+              />
+            </Row>
+          </Section>
+
+          <Section label={t('settings.search')}>
+            <Row name={t('settings.searchScope')} desc={t('settings.searchScope.desc')}>
+              <Seg<SearchScope>
+                value={s.searchScope}
+                onChange={(v) => patch({ searchScope: v })}
+                options={[
+                  ['all', t('settings.scope.all')],
+                  ['system', t('settings.scope.system')],
+                  ['off', t('settings.scope.off')],
+                ]}
               />
             </Row>
           </Section>

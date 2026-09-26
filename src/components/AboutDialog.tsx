@@ -3,13 +3,11 @@ import { useT } from '../lib/i18n'
 import logoUrl from '../assets/logo.png'
 import {
   REPO_URL,
-  fetchLatestRelease,
-  isNewerVersion,
+  checkForUpdate,
+  installUpdate,
   resolveAppVersion,
-  type LatestRelease,
+  useUpdate,
 } from '../lib/update'
-
-type Phase = 'about' | 'checking' | 'uptodate' | 'available' | 'error'
 
 interface Props {
   open: boolean
@@ -21,10 +19,13 @@ interface Props {
 
 export function AboutDialog({ open, checkSeq, onClose }: Props) {
   const t = useT()
-  const [phase, setPhase] = useState<Phase>('about')
   const [version, setVersion] = useState('')
-  const [release, setRelease] = useState<LatestRelease | null>(null)
-  const [error, setError] = useState('')
+  /** Which half of the dialog is on screen: the static about page, or whatever
+   * the updater just reported. */
+  const [mode, setMode] = useState<'about' | 'check'>('about')
+  const phase = useUpdate((s) => s.phase)
+  const update = useUpdate((s) => s.update)
+  const error = useUpdate((s) => s.error)
   const seenSeq = useRef(0)
 
   useEffect(() => {
@@ -35,9 +36,10 @@ export function AboutDialog({ open, checkSeq, onClose }: Props) {
     })
     if (checkSeq !== seenSeq.current) {
       seenSeq.current = checkSeq
-      void runCheck()
+      setMode('check')
+      void checkForUpdate()
     } else {
-      setPhase('about')
+      setMode('about')
     }
     return () => {
       alive = false
@@ -55,17 +57,9 @@ export function AboutDialog({ open, checkSeq, onClose }: Props) {
 
   if (!open) return null
 
-  const runCheck = async () => {
-    setPhase('checking')
-    setError('')
-    try {
-      const rel = await fetchLatestRelease()
-      setRelease(rel)
-      setPhase(isNewerVersion(rel.tag, version) ? 'available' : 'uptodate')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-      setPhase('error')
-    }
+  const runCheck = () => {
+    setMode('check')
+    void checkForUpdate()
   }
 
   const openUrl = (url: string) => {
@@ -81,11 +75,11 @@ export function AboutDialog({ open, checkSeq, onClose }: Props) {
           </span>
           <div>
             <div className="about-name">SVCode</div>
-            {phase === 'about' && version && <div className="about-version">v{version}</div>}
+            {mode === 'about' && version && <div className="about-version">v{version}</div>}
           </div>
         </div>
 
-        {phase === 'about' && (
+        {mode === 'about' && (
           <>
             <p className="about-tagline">{t('about.tagline')}</p>
             <p className="about-desc">{t('about.desc')}</p>
@@ -100,25 +94,28 @@ export function AboutDialog({ open, checkSeq, onClose }: Props) {
               <button className="dlg-btn" onClick={() => openUrl(REPO_URL)}>
                 {t('about.github')}
               </button>
-              <button className="dlg-btn is-primary" onClick={() => void runCheck()}>
+              <button className="dlg-btn is-primary" onClick={runCheck}>
                 {t('about.checkUpdate')}
               </button>
             </div>
           </>
         )}
 
-        {phase === 'checking' && (
+        {mode === 'check' && phase === 'checking' && (
           <div className="about-status">
             <span className="about-spinner" aria-hidden />
             <span>{t('about.checking')}</span>
           </div>
         )}
 
-        {phase === 'uptodate' && (
+        {mode === 'check' && phase === 'uptodate' && (
           <>
-            <p className="about-tagline">{t('about.upToDate')}</p>
+            <p className="about-tagline">
+              {t('about.upToDate')}
+              {version && <span className="about-version"> · v{version}</span>}
+            </p>
             <div className="about-actions">
-              <button className="dlg-btn" onClick={() => void runCheck()}>
+              <button className="dlg-btn" onClick={runCheck}>
                 {t('about.retry')}
               </button>
               <button className="dlg-btn is-primary" onClick={onClose}>
@@ -128,33 +125,50 @@ export function AboutDialog({ open, checkSeq, onClose }: Props) {
           </>
         )}
 
-        {phase === 'available' && release && (
+        {mode === 'check' && (phase === 'available' || phase === 'installing') && update && (
           <>
             <p className="about-tagline">
-              <strong className="about-new">{t('about.newVersion')}: {release.tag}</strong>
+              <strong className="about-new">
+                {t('about.newVersion')}: {update.version}
+              </strong>
               <br />
               {t('about.currentVersion', { current: `v${version}` })}
-              {release.publishedAt &&
-                ' · ' + t('about.published', { date: new Date(release.publishedAt).toLocaleDateString() })}
+              {update.date &&
+                ' · ' + t('about.published', { date: new Date(update.date).toLocaleDateString() })}
             </p>
-            {release.notes && (
+            {update.notes && (
               <>
                 <div className="about-notes-label">{t('about.notes')}</div>
-                <pre className="about-notes">{release.notes}</pre>
+                <pre className="about-notes">{update.notes}</pre>
               </>
             )}
+            {phase === 'installing' && (
+              <div className="about-status">
+                <span className="about-spinner" aria-hidden />
+                <span>
+                  {t('about.installing')}
+                  {update.progress !== null &&
+                    ' ' + t('about.progress', { n: Math.round(update.progress * 100) })}
+                </span>
+              </div>
+            )}
             <div className="about-actions">
-              <button className="dlg-btn" onClick={onClose}>
+              <button className="dlg-btn" disabled={phase === 'installing'} onClick={onClose}>
                 {t('about.later')}
               </button>
-              <button className="dlg-btn is-primary" onClick={() => openUrl(release.url)}>
-                {t('about.download')}
+              <button
+                className="dlg-btn is-primary"
+                disabled={phase === 'installing'}
+                onClick={() => void installUpdate()}
+              >
+                {t('about.install')}
               </button>
             </div>
+            <div className="about-tech">{t('about.restartNote')}</div>
           </>
         )}
 
-        {phase === 'error' && (
+        {mode === 'check' && phase === 'error' && (
           <>
             <p className="about-tagline">
               {t('about.failed')}
@@ -165,7 +179,7 @@ export function AboutDialog({ open, checkSeq, onClose }: Props) {
               <button className="dlg-btn" onClick={onClose}>
                 {t('about.close')}
               </button>
-              <button className="dlg-btn is-primary" onClick={() => void runCheck()}>
+              <button className="dlg-btn is-primary" onClick={runCheck}>
                 {t('about.retry')}
               </button>
             </div>

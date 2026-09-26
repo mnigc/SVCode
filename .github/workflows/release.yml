@@ -34,16 +34,43 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Resolve release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        id: notes
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # 取 CHANGELOG.md 里 '## v<version>' 到下一个 '## ' 之间的小节；找不到就用通用文案
+          awk -v v="## v$version" '
+            index($0, v) == 1 { take = 1; next }
+            /^## / { if (take) exit }
+            take { print }
+          ' CHANGELOG.md > body.md
+          if [ ! -s body.md ]; then
+            printf 'Windows 安装包见下方 Assets。\n' > body.md
+          fi
+          printf '本次发布的 Windows 安装包见下方 Assets（.exe 为 NSIS 安装程序，.msi 为 MSI 安装包）。\n' >> body.md
+          {
+            echo 'body<<SVCODE_RELEASE_BODY'
+            cat body.md
+            echo 'SVCODE_RELEASE_BODY'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build & release
         id: tauri
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 更新包签名：公钥写在 tauri.conf.json 的 plugins.updater.pubkey，
+          # 私钥存在仓库 Secrets 里。缺这一项 tauri-action 就不会产出
+          # .sig 与 latest.json，应用内的「检查更新」也就永远拿不到版本。
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           # 仅在 tag 推送时创建 Release；手动触发时留空，只构建
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: 'SVCode ${{ github.ref_name }}'
-          releaseBody: 'Windows 安装包见下方 Assets（.exe 为 NSIS 安装程序，.msi 为 MSI 安装包）。'
+          # 手动触发没有标签，也就没有 CHANGELOG 小节，直接留空
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           args: '--target x86_64-pc-windows-msvc'

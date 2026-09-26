@@ -12,6 +12,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             use tauri::Manager;
             app.manage(watcher::init(&app.handle()));
@@ -33,6 +34,7 @@ pub fn run() {
             terminal::open_terminal,
             search::search_files,
             search::search_status,
+            search::search_set_scope,
             watcher::watch_dir,
             watcher::unwatch_dir
         ])

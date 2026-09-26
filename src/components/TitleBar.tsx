@@ -3,6 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useWorkspace } from '../store/workspace'
 import { useSettings, type ThemeName } from '../lib/settings'
 import { useT, type TextKey } from '../lib/i18n'
+import { useUpdate } from '../lib/update'
 import { AboutDialog } from './AboutDialog'
 import { SettingsDialog } from './SettingsDialog'
 import { NetworkLocationDialog } from './NetworkLocationDialog'
@@ -27,6 +28,9 @@ export function TitleBar() {
   const [checkSeq, setCheckSeq] = useState(0)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [netDialogOpen, setNetDialogOpen] = useState(false)
+  // The startup check leaves this set when a signed newer build exists: the
+  // menu item shows the version, so nothing interrupts the user outright.
+  const updateVersion = useUpdate((s) => (s.phase === 'available' ? s.update?.version : undefined))
 
   // Global shortcut: Ctrl+, opens Settings (works even when the editor has
   // focus — it's a key the editor never uses).
@@ -132,6 +136,7 @@ export function TitleBar() {
     [t('menu.help')]: [
       {
         label: t('menu.checkUpdate'),
+        hint: updateVersion,
         onSelect: () => {
           setAboutOpen(true)
           setCheckSeq((seq) => seq + 1)

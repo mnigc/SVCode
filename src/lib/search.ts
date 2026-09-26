@@ -10,6 +10,9 @@ export interface SearchHit {
 export interface SearchBackendStatus {
   /** Index fully built (local tier) or Everything answering (everything tier). */
   ready: boolean
+  /** A build has been kicked off — false while the local index is still idle,
+   * which is the normal state until the first search of the session. */
+  started: boolean
   files: number
   /** 'everything' = Everything IPC, 'local' = self-built index. */
   source: 'everything' | 'local'
@@ -92,9 +95,10 @@ export const useSearch = create<SearchState>((set) => ({
 }))
 
 /**
- * Ask the backend to pick its search tier early (Everything if it is running,
- * otherwise start the local index build) so the first real query is fast.
+ * Tell the backend which drives the local index may walk. It rebuilds only
+ * when the value actually changes, so pushing the stored setting on boot is
+ * free. Typed as a plain string to keep this module off settings.ts.
  */
-export function kickOffSearchBackend() {
-  void useSearch.getState().refreshStatus()
+export function applySearchScope(mode: string) {
+  void invoke('search_set_scope', { mode }).catch(() => {})
 }

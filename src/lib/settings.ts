@@ -1,9 +1,13 @@
 import { create } from 'zustand'
 import { kv } from './persist'
+import { applySearchScope } from './search'
 
 export type ThemeName = 'dark' | 'light' | 'auto'
 export type LangPref = 'auto' | 'zh' | 'en'
 export type ViewPref = 'edit' | 'both' | 'preview'
+/** Drives the built-in filename index walks. Everything wins over all of
+ * these when it is running. */
+export type SearchScope = 'off' | 'system' | 'all'
 
 /** Everything the user can configure, with the defaults used before any
  * settings.json exists. New settings go here + in the dialog below. */
@@ -20,6 +24,7 @@ export interface SettingsValues {
   defaultView: ViewPref
   /** UNC paths (\\server\share…) mounted under 此电脑, Windows only. */
   netLocations: string[]
+  searchScope: SearchScope
 }
 
 export const DEFAULT_SETTINGS: SettingsValues = {
@@ -32,6 +37,7 @@ export const DEFAULT_SETTINGS: SettingsValues = {
   showHidden: false,
   defaultView: 'both',
   netLocations: [],
+  searchScope: 'all',
 }
 
 const PERSIST_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof SettingsValues)[]
@@ -65,12 +71,16 @@ export const useSettings = create<SettingsState>((set, get) => ({
     } finally {
       set({ loaded: true })
       applyTheme(get().theme)
+      // Hand the saved scope to the backend; a no-op there unless it differs
+      // from its own default.
+      applySearchScope(get().searchScope)
     }
   },
 
   patch: (changes) => {
     set(changes)
     if (changes.theme !== undefined) applyTheme(changes.theme)
+    if (changes.searchScope !== undefined) applySearchScope(changes.searchScope)
     const s = get()
     const values = Object.fromEntries(PERSIST_KEYS.map((key) => [key, s[key]]))
     void kv('settings.json').then((k) => k.set('settings', values))
