@@ -26,7 +26,7 @@
         <ServiceInstall
           Id="WfsServiceInstall"
           Name="WFSearch"
-          DisplayName="WFSearch File Name Index"
+          DisplayName="WFSearch File Search Engine"
           Description="Indexes NTFS file names for SVCode's whole-disk search. Reading the MFT requires LocalSystem rights."
           Type="ownProcess"
           Account="LocalSystem"

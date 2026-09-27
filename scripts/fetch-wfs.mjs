@@ -8,10 +8,10 @@
 //
 // The version and hash are pinned deliberately: SVCode speaks protocol v1 to
 // the gateway and depends on the `x-wfs-token` handshake, so a silently
-// updated engine could break search in a build nobody reviewed. Upgrades come
-// from `node scripts/check-wfs.mjs`, which the daily workflow runs and turns
-// into a bump PR; after merging one (or after editing the constants below by
-// hand) run this script and re-run
+// updated engine could break search in a build nobody reviewed. Upgrades are
+// manual: read the release notes at
+// https://github.com/mnigc/WFSearch/releases, edit the constants below, run
+// this script and re-run
 // `cargo test --lib -- wfs::tests --ignored` against a live engine.
 //
 // Behind a proxy (this project's GitHub access goes through one locally),
@@ -21,9 +21,9 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const VERSION = '0.1.1'
-const SHA256 = 'e03551a3fbbdd7b2037f493fa1e8a0eea1c7036ac763adf0bbaea1e334cb682a'
-const SIZE = 3483136
+const VERSION = '0.1.2'
+const SHA256 = '0cd71e1c6da609575788024e74d26694ac5a20186bade0714fc8125361d5bd16'
+const SIZE = 3478528
 const ASSET = 'wfs-server.exe'
 const REPO = 'mnigc/WFSearch'
 

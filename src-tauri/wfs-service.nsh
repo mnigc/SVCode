@@ -36,27 +36,40 @@
 ; machine that installed into Program Files. Every command is written out in
 ; full at its call site instead.
 
-; Registers the engine and claims ownership only once the SCM really has the
-; service -- the exit code of `install` is not evidence of anything.
+; Registers the service. The engine stopped installing itself in 0.1.2
+; (`install` / `uninstall` are gone -- see its docs/deploy.md): a service only
+; ever sees the one string in its binPath, and where that points is the
+; deployer's decision.
+;
+; binPath has to carry the exe path *and* the `run` entry point, so its value
+; contains an inner pair of quotes -- escaped with backslashes, which is how
+; sc.exe is told to strip exactly one layer:
+;   binPath= "\"C:\Program Files\WFSearch\wfs-server.exe\" run"
+;
+; Ownership is claimed only once the SCM really has the service: `sc create`'s
+; exit code would not prove it, and an unowned service is worse than none.
 Function WfsServiceRegister
   StrCpy $3 0
   ${Do}
     IntOp $3 $3 + 1
-    ; `install` registers with itself as the image path, so it must be run from
-    ; the copy, not from $INSTDIR.
-    nsExec::ExecToStack '"${WFS_EXE}" install'
+    nsExec::ExecToStack 'sc.exe create ${WFS_SVC_NAME} binPath= "\"${WFS_EXE}\" run" obj= LocalSystem start= auto DisplayName= "WFSearch File Search Engine"'
     Pop $4
     Pop $5
     nsExec::ExecToStack 'sc.exe query ${WFS_SVC_NAME}'
     Pop $6
     Pop $7
     ${If} $6 == 0
+      ; Cosmetic, so it is set after the service is already ours and never
+      ; gates ownership: a bare skeleton service still beats no service.
+      nsExec::ExecToStack 'sc.exe description ${WFS_SVC_NAME} "Fast NTFS filename search engine (MFT index + USN journal) for SVCode whole-disk search. Reading the MFT requires LocalSystem rights."'
+      Pop $9
+      Pop $9
       WriteRegDWORD HKLM '${WFS_MARK_KEY}' '${WFS_MARK_VALUE}' 1
       Return
     ${EndIf}
     ${If} $3 >= 5
       DetailPrint 'WFSearch: could not register the service ($4): $5'
-      DetailPrint 'WFSearch: whole-disk search stays unavailable until it is -- run "$PROGRAMFILES64\WFSearch\wfs-server.exe" install from an elevated terminal.'
+      DetailPrint 'WFSearch: whole-disk search stays unavailable until it is -- from an elevated terminal run: sc create WFSearch binPath= "\"$PROGRAMFILES64\WFSearch\wfs-server.exe\" run" obj= LocalSystem start= auto'
       Return
     ${EndIf}
     Sleep 2000
@@ -111,8 +124,9 @@ Function WfsServiceInstall
   nsExec::ExecToLog 'taskkill /F /IM wfs-server.exe'
   Pop $9
 
-  ; Registration leaves the service stopped on some machines; `install` may
-  ; also have started it already, in which case this is a harmless no-op.
+  ; The service is stopped on both paths that reach here -- ours from an
+  ; earlier SVCode version, or the one just created -- so this is the start
+  ; that brings the engine up without waiting for a reboot.
   nsExec::ExecToLog 'net start ${WFS_SVC_NAME}'
   Pop $9
 FunctionEnd
@@ -127,7 +141,9 @@ Function un.WfsServiceRemove
 
   nsExec::ExecToLog 'net stop ${WFS_SVC_NAME}'
   Pop $9
-  nsExec::ExecToStack '"${WFS_EXE}" uninstall'
+  ; The engine cannot uninstall itself any more either, so the SCM call is
+  ; ours. The service is stopped by now, which is when it releases its exe.
+  nsExec::ExecToStack 'sc.exe delete ${WFS_SVC_NAME}'
   Pop $0
   Pop $1
   Delete '${WFS_EXE}'

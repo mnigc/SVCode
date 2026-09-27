@@ -40,26 +40,6 @@ jobs:
       - name: Fetch WFSearch sidecar
         run: node scripts/fetch-wfs.mjs
 
-      # 顺手巡检上游：只在任务摘要里记一行"内置版本 / 最新版本的差异"，本次构建
-      # 用的仍然是锁定的二进制。升级由 wfs-bump.yml 以 PR 形式进来。
-      - name: Report newer WFSearch upstream (non-blocking)
-        shell: bash
-        continue-on-error: true
-        run: |
-          node scripts/check-wfs.mjs > wfs-check.json
-          {
-            echo '### 内置 WFSearch 引擎'
-            echo
-            echo "- 本次打包：v$(jq -r .pinned.version wfs-check.json)（sha256 已校验）"
-            echo "- 上游最新：v$(jq -r .latest.version wfs-check.json)，发布于 $(jq -r .releasedAt wfs-check.json)"
-            if [ "$(jq -r .updateAvailable wfs-check.json)" = 'true' ]; then
-              echo '- 上游有更新版本：等你合并 `wfs-bump` PR 后才会进包'
-            fi
-            if [ "$(jq -r .protocolChanged wfs-check.json)" = 'true' ]; then
-              echo '- 上游线协议号与客户端实现不一致，需人工确认'
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
       - name: Resolve release notes
         if: startsWith(github.ref, 'refs/tags/')
         id: notes

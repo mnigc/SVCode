@@ -72,14 +72,14 @@ updates after that.
   folder so an upgrade never fights a locked binary
 - If a WFSearch service is already on the machine from a standalone install, SVCode reuses it and
   the installer leaves it untouched (and does not delete it on uninstall)
-- SVCode still starts the sidecar from its own folder when nothing holds the port; that fallback
-  only indexes volumes when SVCode itself is run elevated
+- Only when no WFSearch service is registered at all does SVCode fall back to running the sidecar
+  from its own folder; that path can only index volumes when SVCode itself is run elevated
 - SVCode talks to the engine over its loopback HTTP gateway and authenticates with the bearer
-  token the engine publishes at `%ProgramData%\WFSearch\http.token`, so **engine 0.1.0 or newer**
-  is required on both sides
-- The packaged engine version is pinned in `scripts/fetch-wfs.mjs`; a daily workflow watches the
-  upstream releases and opens a bump PR (`scripts/check-wfs.mjs`), so a new engine only reaches an
-  installer after that PR is merged
+  token the engine publishes at `%ProgramData%\WFSearch\http.token`, so **engine 0.1.2 or newer**
+  is required on both sides (0.1.2 hands registration to the deployer, tolerates a port already
+  in use at boot, and validates its snapshots)
+- The packaged engine version is pinned in `scripts/fetch-wfs.mjs`; upgrading is a manual edit of
+  that pin followed by a rebuild, so a new engine never reaches an installer unreviewed
 - Query syntax: whitespace-separated AND terms, `*`/`?` globs, terms containing `\` match the full
   path (that's what "search inside this folder" from the tree relies on)
 

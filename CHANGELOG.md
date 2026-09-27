@@ -31,13 +31,13 @@
 - 服务跑 `%ProgramFiles%\WFSearch\wfs-server.exe` 这份副本，不指向安装目录里的 sidecar：服务运行期间锁着自己的 exe，指向安装目录会让每次升级撞文件占用，卸载后还会留下悬空的服务引用。
 - 本机若已有独立安装的 WFSearch 服务，安装程序认出后完全不碰，卸载时也不删，SVCode 直接复用。
 - 服务已注册时 SVCode 不再拉起自己的 sidecar：sidecar 以普通权限运行，能占住 127.0.0.1:15100 却读不到任何 MFT，还会把服务永久挡在端口外面。只有在机器上没有该服务时才回退到 sidecar，而那条路要以管理员身份运行才能建索引。
-- 通信走引擎的回环 HTTP 网关，并用引擎启动时发布的 token（`%ProgramData%\WFSearch\http.token`）鉴权，两侧都需**引擎 0.1.0 或更新**。查询语法：空格分词 AND、`*`/`?` 通配、含 `\` 的词按全路径匹配（文件夹右键「在其中搜索」即靠它）。
-- 打进安装包的引擎版本锁在 `scripts/fetch-wfs.mjs`，二进制不提交进仓库（本地与 CI 按版本号 + sha256 拉取校验）；每日巡检上游发布并自动提「升锁版本」的 PR（`scripts/check-wfs.mjs`），合并后下一次打包才用新版。
+- 通信走引擎的回环 HTTP 网关，并用引擎启动时发布的 token（`%ProgramData%\WFSearch\http.token`）鉴权，两侧都需**引擎 0.1.2 或更新**（0.1.2 起注册服务改为部署方的事、启动时端口被占不再致命、快照带校验）。查询语法：空格分词 AND、`*`/`?` 通配、含 `\` 的词按全路径匹配（文件夹右键「在其中搜索」即靠它）。
+- 打进安装包的引擎版本锁在 `scripts/fetch-wfs.mjs`，二进制不提交进仓库（本地与 CI 按版本号 + sha256 拉取校验）；升级靠手工改锁版本常量，下一次打包才用新版。
 
 ### 安装与自动更新
 
 - 只为所有用户安装（UAC 确认、可选安装目录与盘符），升级自动回到同一位置。注册服务必须要管理员权限，因此不提供「仅为当前用户安装」；代价是自动更新从此会弹一次 UAC。
-- 注册服务在两条打包路上分别实现：NSIS 用 `installerHooks`（`src-tauri/wfs-service.nsh`），MSI 用 WiX fragment（`src-tauri/wfs-service.wxs`）；卸载按 HKLM 的所有权标记判断该不该停服删服。
+- 注册服务在两条打包路上分别实现：NSIS 用 `installerHooks`（`src-tauri/wfs-service.nsh`），MSI 用 WiX fragment（`src-tauri/wfs-service.wxs`）；卸载按 HKLM 的所有权标记判断该不该停服删服。引擎从 0.1.2 起删掉了自带的 `install` / `uninstall` 子命令 —— 注册是部署方的事，所以 NSIS 钩子直接走 SCM：`sc create WFSearch binPath= "\"…\wfs-server.exe\" run" obj= LocalSystem start= auto`，随后 `sc query` 复核，卸载 `sc delete`。升级只换文件、binPath 不变，不重建服务。
 - NSIS 钩子在 `net start` 之前会先 `taskkill` 掉残留的 sidecar：引擎遇到端口被占是直接退出的，服务被抢不到端口的 sidecar 挡在门外就会启动失败并立刻停止，而服务管理器把这显示成误导性的「错误 1：函数不正确」。
 - 体积：NSIS 安装包约 4.4 MB，MSI 约 5.5 MB —— WiX 的 `ServiceInstall` 要求服务二进制本身是包内组件，引擎被打进两份；NSIS 只在安装时现场复制。
 - 系统托盘后台运行：左键唤起、右键菜单，关窗默认缩到托盘（设置可关），单实例再次启动直接唤起已有窗口。
