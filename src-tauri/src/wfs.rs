@@ -17,6 +17,11 @@
 //! If an engine is already listening — e.g. the user installed WFSearch as a
 //! Windows service — we simply ride it; the sidecar is only spawned when the
 //! port is free, and only once per cooldown window.
+//!
+//! A registered service always outranks the sidecar, even while stopped: the
+//! sidecar runs as this user, so it can bind the port but cannot read a single
+//! MFT. It would serve nothing but `failed` volumes and, worse, keep the port,
+//! so the service could never bind at its next start.
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -24,7 +29,7 @@ use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::Child;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -250,6 +255,50 @@ fn sidecar_path() -> Option<PathBuf> {
     names.iter().map(|n| dir.join(n)).find(|p| p.exists())
 }
 
+/// Runs `sc.exe` with no window and returns its exit code, or `None` when the
+/// SCM itself could not be reached. Only the code is read: `sc` localizes its
+/// messages.
+#[cfg(windows)]
+fn sc(args: &str) -> Option<i32> {
+    use std::os::windows::process::CommandExt;
+    use std::process::Stdio;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut cmd = std::process::Command::new("sc.exe");
+    cmd.args(args.split(' '))
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    cmd.status().ok().map(|s| s.code().unwrap_or(-1))
+}
+
+/// Whether the installer registered the engine as a service. Cached: the
+/// answer cannot change during this process's lifetime, and it decides whether
+/// the sidecar is allowed to take the port at all.
+#[cfg(windows)]
+fn service_registered() -> bool {
+    static KNOWN: AtomicBool = AtomicBool::new(false);
+    static ANSWER: AtomicBool = AtomicBool::new(false);
+    if KNOWN.swap(true, Ordering::SeqCst) {
+        return ANSWER.load(Ordering::SeqCst);
+    }
+    let registered = sc("query WFSearch") == Some(0);
+    ANSWER.store(registered, Ordering::SeqCst);
+    registered
+}
+
+/// Asks the SCM to start a registered-but-stopped engine. A standard user is
+/// refused (error 5), which is exactly why the installer hook does this once
+/// while it is still elevated; this retry only covers the service having been
+/// stopped since. Attempted once per process.
+#[cfg(windows)]
+fn request_service_start() {
+    static TRIED: AtomicBool = AtomicBool::new(false);
+    if !TRIED.swap(true, Ordering::SeqCst) {
+        sc("start WFSearch");
+    }
+}
+
 /// Make sure an engine is (or is becoming) available: probe, then spawn the
 /// bundled `wfs-server console` once per cooldown window. Returns whether an
 /// engine is answering; callers otherwise read the outcome through
@@ -261,6 +310,13 @@ pub fn ensure_server() -> bool {
         // spawning can fix, and a retry would only collide.
         Availability::Blocked => return false,
         Availability::Absent => {}
+    }
+    #[cfg(windows)]
+    if service_registered() {
+        // The port belongs to the service; a sidecar would only serve `failed`
+        // volumes and lock the engine out of it for good.
+        request_service_start();
+        return availability() == Availability::Ready;
     }
     let mut sidecar = SIDECAR.lock().unwrap();
     if let Some(child) = sidecar.as_mut() {
@@ -340,7 +396,21 @@ mod tests {
             super::http_get("/api/v1/status", "definitely-not-the-token").expect("gateway reply");
         assert_eq!(status, 401, "engine accepted a forged token: {body}");
         assert_eq!(body["code"], 4);
-        assert_eq!(super::availability(), super::Availability::Blocked);
+        // Whether the client then calls this engine Blocked depends on the
+        // engine's `acl`: a restricted one publishes a token this user cannot
+        // read, so the credential is missing and the sidecar must not be
+        // spawned; a shared one publishes a readable token, which is Ready.
+        let token_readable = std::fs::read_to_string(super::token_path())
+            .map(|t| !t.trim().is_empty())
+            .unwrap_or(false);
+        assert_eq!(
+            super::availability(),
+            if token_readable {
+                super::Availability::Ready
+            } else {
+                super::Availability::Blocked
+            }
+        );
     }
 
     /// The engine publishes `<data dir>\http.token` and its default data dir

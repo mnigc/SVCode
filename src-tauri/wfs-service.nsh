@@ -26,18 +26,15 @@
 !define WFS_MARK_KEY 'SOFTWARE\SVCode'
 !define WFS_MARK_VALUE 'WfsServiceOwned'
 
-; nsExec always leaves its exit code on the stack; nobody needs it here.
-;
-; Never route a path through this macro: NSIS eats the quotes around a command
-; string when it arrives as a macro parameter, so `C:\Program Files\...` reaches
-; nsExec unquoted and it launches `C:\Program` instead. The result is a silent
-; exit code 1, which is how the first version of this hook managed to skip
-; service registration on every machine that installed into Program Files.
-; Anything with a path in it gets its own nsExec call, written out in full.
-!macro WfsQuiet cmd
-  nsExec::ExecToLog ${cmd}
-  Pop $9
-!macroend
+; There is deliberately no `run this command quietly` macro here. NSIS eats the
+; quotes around a command string when it arrives as a macro parameter, so
+; `nsExec::ExecToLog 'net start WFSearch'` compiles into a call that runs bare
+; `net` -- which prints its usage text and returns 1. Same for a path:
+; `"C:\Program Files\x.exe" install` reaches nsExec unquoted and launches
+; `C:\Program`. Both variants failed silently here, and the second one is what
+; made the first release of this hook skip service registration on every
+; machine that installed into Program Files. Every command is written out in
+; full at its call site instead.
 
 ; Registers the engine and claims ownership only once the SCM really has the
 ; service -- the exit code of `install` is not evidence of anything.
@@ -84,7 +81,8 @@ Function WfsServiceInstall
       Return
     ${EndIf}
     ; Ours from an earlier SVCode version -- and it is holding its own exe open.
-    !insertmacro WfsQuiet 'net stop ${WFS_SVC_NAME}'
+    nsExec::ExecToLog 'net stop ${WFS_SVC_NAME}'
+    Pop $9
   ${EndIf}
 
   SetOverwrite try
@@ -100,9 +98,23 @@ Function WfsServiceInstall
     Call WfsServiceRegister
   ${EndIf}
 
+  ; The engine exits when 127.0.0.1:15100 is already taken, and the process
+  ; that usually holds it is the plain-user sidecar an older SVCode spawned --
+  ; one that can bind the port but cannot read an MFT. The service is stopped
+  ; at this point (or does not exist yet), so this only ever removes the
+  ; impostor; SVCode itself is untouched, and it stops trying for the port once
+  ; it sees the service registered.
+  ;
+  ; Bare `taskkill`, never '$SYSDIR\System32\taskkill.exe': this is a 32-bit
+  ; installer, so the loader redirects System32 to SysWOW64 -- which has no
+  ; taskkill.exe -- and nsExec then reports a bare `error`.
+  nsExec::ExecToLog 'taskkill /F /IM wfs-server.exe'
+  Pop $9
+
   ; Registration leaves the service stopped on some machines; `install` may
   ; also have started it already, in which case this is a harmless no-op.
-  !insertmacro WfsQuiet 'net start ${WFS_SVC_NAME}'
+  nsExec::ExecToLog 'net start ${WFS_SVC_NAME}'
+  Pop $9
 FunctionEnd
 
 Function un.WfsServiceRemove
@@ -113,8 +125,8 @@ Function un.WfsServiceRemove
     Return
   ${EndIf}
 
-  !insertmacro WfsQuiet 'net stop ${WFS_SVC_NAME}'
-  ; Written out rather than through WfsQuiet: the path must keep its quotes.
+  nsExec::ExecToLog 'net stop ${WFS_SVC_NAME}'
+  Pop $9
   nsExec::ExecToStack '"${WFS_EXE}" uninstall'
   Pop $0
   Pop $1
