@@ -31,7 +31,7 @@ Fix a config, glance at a log, tweak a script, peek at a doc — a full IDE is o
 is too crude. SVCode lives in that gap: **starts in seconds, shows what you open, saves as you
 edit.**
 
-- Starts in seconds; installer **under 4 MB**; ~100 MB RAM at idle
+- Starts in seconds; installer **≈ 4.4 MB** (whole-disk search engine included); ~100 MB RAM at idle
 - No "open workspace" step: the file tree shows your **entire disk** from launch
 - When you need completion, LSP or plugins, use a full IDE — SVCode only does **open fast, view
   fast, fix fast**
@@ -96,8 +96,8 @@ updates after that.
 Grab the latest installer from [**Releases**](https://github.com/mnigc/SVCode/releases/latest) —
 the whole editor ships in a download of just a few megabytes:
 
-- `SVCode_x.y.z_x64-setup.exe` — NSIS installer, **≈ 3.6 MB** (recommended)
-- `SVCode_x.y.z_x64_en-US.msi` — MSI package, **≈ 4.7 MB**
+- `SVCode_x.y.z_x64-setup.exe` — NSIS installer, **≈ 4.4 MB** (recommended)
+- `SVCode_x.y.z_x64_en-US.msi` — MSI package, **≈ 5.5 MB**
 
 Requires Windows 10 or later (renders with the bundled WebView2).
 
