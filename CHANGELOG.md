@@ -2,6 +2,14 @@
 
 版本标题请保持 `## v<版本号>` 格式，发布工作流会按标签把对应小节抓取成 Release 说明与应用内「检查更新」的文案。
 
+## v0.5.0
+
+### 文件树图标
+
+- 补齐此前落到通用文件图标的常见类型：视频（mp4/mkv/mov/avi/webm 等）、音频（mp3/wav/flac/ogg/m4a 等）、可执行与安装包（exe/msi/dll/jar/apk/so 等）、压缩包补全（bz2/xz/zst/tgz/iso）、字体（ttf/otf/woff2 等）。
+- 设计类新增专用图标：Axure（rp）、Figma（fig）、Sketch（sketch）、Photoshop（psd/psb）、Illustrator（ai/eps）、XD（xd），以及 3D/CAD 模型（skp/blend/fbx/glb/stl/dwg/dxf）。
+- `package.json` / `package-lock.json` 显示为 Node 绿色图标。
+
 ## v0.4.0
 
 ### 搜索引擎换成内置 WFSearch

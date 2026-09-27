@@ -28,6 +28,8 @@ const BASENAME_EXT: Record<string, string> = {
   procfile: 'make',
   gemfile: 'make',
   rakefile: 'make',
+  'package.json': 'node',
+  'package-lock.json': 'node',
 }
 
 export function fileIcon(path: string): string {
@@ -174,6 +176,80 @@ const EXT_ICONS: Record<string, { glyph: GlyphId; color: string }> = {
   rar: { glyph: 'cube', color: '#cf9d3d' },
   tar: { glyph: 'cube', color: '#cf9d3d' },
   gz: { glyph: 'cube', color: '#cf9d3d' },
+  bz2: { glyph: 'cube', color: '#cf9d3d' },
+  xz: { glyph: 'cube', color: '#cf9d3d' },
+  zst: { glyph: 'cube', color: '#cf9d3d' },
+  tgz: { glyph: 'cube', color: '#cf9d3d' },
+  iso: { glyph: 'cube', color: '#cf9d3d' },
+
+  mp4: { glyph: 'video', color: '#a45fd4' },
+  mkv: { glyph: 'video', color: '#a45fd4' },
+  mov: { glyph: 'video', color: '#a45fd4' },
+  avi: { glyph: 'video', color: '#a45fd4' },
+  wmv: { glyph: 'video', color: '#a45fd4' },
+  flv: { glyph: 'video', color: '#a45fd4' },
+  webm: { glyph: 'video', color: '#a45fd4' },
+  m4v: { glyph: 'video', color: '#a45fd4' },
+  mpg: { glyph: 'video', color: '#a45fd4' },
+  mpeg: { glyph: 'video', color: '#a45fd4' },
+  '3gp': { glyph: 'video', color: '#a45fd4' },
+
+  mp3: { glyph: 'audio', color: '#37a878' },
+  wav: { glyph: 'audio', color: '#37a878' },
+  flac: { glyph: 'audio', color: '#37a878' },
+  ogg: { glyph: 'audio', color: '#37a878' },
+  oga: { glyph: 'audio', color: '#37a878' },
+  m4a: { glyph: 'audio', color: '#37a878' },
+  aac: { glyph: 'audio', color: '#37a878' },
+  wma: { glyph: 'audio', color: '#37a878' },
+  opus: { glyph: 'audio', color: '#37a878' },
+  amr: { glyph: 'audio', color: '#37a878' },
+  mid: { glyph: 'audio', color: '#37a878' },
+  midi: { glyph: 'audio', color: '#37a878' },
+
+  exe: { glyph: 'binary', color: '#8a93a6' },
+  msi: { glyph: 'binary', color: '#8a93a6' },
+  appx: { glyph: 'binary', color: '#8a93a6' },
+  dll: { glyph: 'binary', color: '#8a93a6' },
+  sys: { glyph: 'binary', color: '#8a93a6' },
+  so: { glyph: 'binary', color: '#8a93a6' },
+  dylib: { glyph: 'binary', color: '#8a93a6' },
+  jar: { glyph: 'binary', color: '#8a93a6' },
+  war: { glyph: 'binary', color: '#8a93a6' },
+  apk: { glyph: 'binary', color: '#62b544' },
+  deb: { glyph: 'binary', color: '#8a93a6' },
+  rpm: { glyph: 'binary', color: '#8a93a6' },
+  appimage: { glyph: 'binary', color: '#8a93a6' },
+  com: { glyph: 'binary', color: '#8a93a6' },
+  bin: { glyph: 'binary', color: '#8a93a6' },
+  o: { glyph: 'binary', color: '#8a93a6' },
+  obj: { glyph: 'binary', color: '#8a93a6' },
+  class: { glyph: 'binary', color: '#8a93a6' },
+
+  rp: { glyph: 'design', color: '#d95f76' },
+  fig: { glyph: 'design', color: '#d9743f' },
+  psd: { glyph: 'design', color: '#4a9be0' },
+  psb: { glyph: 'design', color: '#4a9be0' },
+  ai: { glyph: 'design', color: '#d9873a' },
+  eps: { glyph: 'design', color: '#d9873a' },
+  xd: { glyph: 'design', color: '#d95fc4' },
+  sketch: { glyph: 'design', color: '#d9a52b' },
+  afs: { glyph: 'design', color: '#d95f76' },
+  skp: { glyph: 'model', color: '#d9643a' },
+  blend: { glyph: 'model', color: '#3f7fd0' },
+  fbx: { glyph: 'model', color: '#8a93a6' },
+  glb: { glyph: 'model', color: '#8a93a6' },
+  gltf: { glyph: 'model', color: '#8a93a6' },
+  stl: { glyph: 'model', color: '#8a93a6' },
+  dwg: { glyph: 'model', color: '#3f95d4' },
+  dxf: { glyph: 'model', color: '#3f95d4' },
+  ttf: { glyph: 'font', color: '#986fd4' },
+  otf: { glyph: 'font', color: '#986fd4' },
+  woff: { glyph: 'font', color: '#986fd4' },
+  woff2: { glyph: 'font', color: '#986fd4' },
+  eot: { glyph: 'font', color: '#986fd4' },
+
+  node: { glyph: 'code', color: '#63a855' },
 }
 
 export interface IconLook {
@@ -480,6 +556,80 @@ export const glyphs = {
       strokeLinecap="round"
       d="M5 3v4.6M2.7 5.3h4.6M11 8.4V13M8.7 10.7h4.6"
     />
+  ),
+  video: (
+    <>
+      <rect fill="currentColor" x="1.8" y="2.8" width="12.4" height="10.4" rx="1.8" />
+      <path fill="#fff" d="M6.7 5.55 11.2 8l-4.5 2.45v-4.9Z" />
+    </>
+  ),
+  audio: (
+    <>
+      <rect fill="currentColor" x="1.8" y="2.8" width="12.4" height="10.4" rx="1.8" />
+      <path
+        fill="none"
+        stroke="#fff"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        d="M11 5v4.1M11 5l-3.9 1v3.9"
+      />
+      <circle fill="#fff" cx="5.9" cy="10.5" r="1.6" />
+      <circle fill="#fff" cx="11" cy="9.7" r="1.3" />
+    </>
+  ),
+  binary: (
+    <>
+      <rect fill="currentColor" x="3.9" y="3.9" width="8.2" height="8.2" rx="1.4" />
+      <rect fill="currentColor" x="5.9" y="1.9" width="1.3" height="2" rx="0.5" />
+      <rect fill="currentColor" x="8.8" y="1.9" width="1.3" height="2" rx="0.5" />
+      <rect fill="currentColor" x="5.9" y="12.1" width="1.3" height="2" rx="0.5" />
+      <rect fill="currentColor" x="8.8" y="12.1" width="1.3" height="2" rx="0.5" />
+      <rect fill="currentColor" x="1.9" y="5.9" width="2" height="1.3" rx="0.5" />
+      <rect fill="currentColor" x="1.9" y="8.8" width="2" height="1.3" rx="0.5" />
+      <rect fill="currentColor" x="12.1" y="5.9" width="2" height="1.3" rx="0.5" />
+      <rect fill="currentColor" x="12.1" y="8.8" width="2" height="1.3" rx="0.5" />
+      <rect fill="#fff" x="6.4" y="6.4" width="3.2" height="3.2" rx="0.7" />
+    </>
+  ),
+  design: (
+    <>
+      <rect fill="currentColor" x="1.8" y="2.8" width="12.4" height="10.4" rx="1.8" />
+      <path
+        fill="none"
+        stroke="#fff"
+        strokeWidth={1.4}
+        d="M4.6 10.6C4.6 7 7 5.4 11.3 5.4"
+      />
+      <circle fill="#fff" cx="4.6" cy="10.6" r="1.3" />
+      <circle fill="#fff" cx="11.3" cy="5.4" r="1.3" />
+    </>
+  ),
+  model: (
+    <>
+      <path fill="currentColor" d="M8 1.6 14 4.9v6.2L8 14.4 2 11.1V4.9L8 1.6Z" />
+      <path
+        fill="none"
+        stroke="#fff"
+        strokeWidth={1.1}
+        opacity={0.85}
+        strokeLinejoin="round"
+        d="M2.6 5.2 8 8.1l5.4-2.9M8 8.1v5.6"
+      />
+      <circle fill="#fff" cx="8" cy="4.6" r="0.9" />
+    </>
+  ),
+  font: (
+    <>
+      <rect fill="currentColor" x="1.8" y="2.8" width="12.4" height="10.4" rx="1.8" />
+      <path
+        fill="none"
+        stroke="#fff"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="m5.2 11 2.8-7.3 2.8 7.3M6.4 8.7h3.2"
+      />
+    </>
   ),
 } satisfies Record<string, ReactNode>
 
