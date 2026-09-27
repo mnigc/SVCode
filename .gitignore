@@ -25,3 +25,7 @@ dist-ssr
 
 # UI-test sample fixtures (regenerate with scripts/gen-office-samples.mjs)
 public/uitest
+
+# WFSearch search-engine sidecar: fetched from a pinned release by
+# scripts/fetch-wfs.mjs, so the installer never drifts from a committed binary.
+src-tauri/binaries/

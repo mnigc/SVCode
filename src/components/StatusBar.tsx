@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useState } from 'react'
 import { useWorkspace, hasPreview, type GroupView, type TabInfo } from '../store/workspace'
 import { extname, kindLabel } from '../lib/paths'
 import { useT, tBackend } from '../lib/i18n'
@@ -18,23 +19,40 @@ function formatSize(bytes: number): string {
   return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[i]}`
 }
 
+/** `2026-09-27 14:05` for the group status bar's timestamp cells. */
+function formatDateTime(ms: number): string {
+  const d = new Date(ms)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 /**
- * Global status bar: workspace-level state only (folder, notice, total tab
- * count). Per-file info — including the Office accuracy note — lives in each
- * group's own strip (GroupStatusBar).
+ * Global status bar: workspace-level state only (selected file/folder path
+ * with a copy button, notice, total tab count). Per-file info — including
+ * the Office accuracy note — lives in each group's own strip
+ * (GroupStatusBar).
  */
 export function StatusBar() {
   const t = useT()
   const selectedDir = useWorkspace((s) => s.selectedDir)
+  const selectedIsDir = useWorkspace((s) => s.selectedIsDir)
+  const activePath = useWorkspace((s) => s.groupActive[s.activeGroup] ?? null)
   const notice = useWorkspace((s) => s.notice)
   const dismissNotice = useWorkspace((s) => s.dismissNotice)
   const tabCount = useWorkspace((s) => s.tabs.length)
 
+  // The tree pick the user made last wins: a clicked folder shows itself,
+  // an opened/focused file shows its full path. With no folder picked the
+  // active file leads; 此电脑 remains the empty-workspace fallback.
+  const shownPath = (selectedIsDir && selectedDir) || activePath || selectedDir
+
   return (
     <footer className="statusbar">
-      <span className="status-cell" title={selectedDir ?? undefined}>
-        {selectedDir ?? t('status.thisPC')}
-      </span>
+      {shownPath ? (
+        <PathCell path={shownPath} />
+      ) : (
+        <span className="status-cell">{t('status.thisPC')}</span>
+      )}
       <span className="status-spacer" />
       {notice && (
         <button className="status-cell status-error" onClick={dismissNotice} title={t('status.dismiss')}>
@@ -43,6 +61,46 @@ export function StatusBar() {
       )}
       <span className="status-cell">{t('status.tabs', { n: tabCount })}</span>
     </footer>
+  )
+}
+
+/** Full path of the current selection + a copy-to-clipboard button that
+ * flips to a checkmark for a moment after copying. */
+function PathCell({ path }: { path: string }) {
+  const t = useT()
+  const [copied, setCopied] = useState(false)
+
+  const copy = () => {
+    void navigator.clipboard.writeText(path).then(
+      () => {
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1500)
+      },
+      () => {},
+    )
+  }
+
+  return (
+    <span className="status-cell status-path" title={path}>
+      <span className="status-path-text">{path}</span>
+      <button
+        className="btn-icon status-copy"
+        title={copied ? t('status.copied') : t('status.copyPath')}
+        aria-label={t('status.copyPath')}
+        onClick={copy}
+      >
+        {copied ? (
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="m2.8 8.6 3.4 3.4 7-8" />
+          </svg>
+        ) : (
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <rect x="5.6" y="5.6" width="7.8" height="7.8" rx="1.4" />
+            <path d="M10.4 3.2H4a1.4 1.4 0 0 0-1.4 1.4v6.4" />
+          </svg>
+        )}
+      </button>
+    </span>
   )
 }
 
@@ -174,6 +232,12 @@ export function GroupStatusBar({ groupId }: { groupId: number }) {
           </span>
           <span className="status-cell">{t('status.lines', { n: tab.lineCount.toLocaleString() })}</span>
         </>
+      )}
+      {tab.modifiedMs !== null && (
+        <span className="status-cell">{t('status.modified', { time: formatDateTime(tab.modifiedMs) })}</span>
+      )}
+      {tab.createdMs !== null && (
+        <span className="status-cell">{t('status.created', { time: formatDateTime(tab.createdMs) })}</span>
       )}
       <span className="status-spacer" />
       {hasPreview(tab.path) && <ViewModeCells groupId={groupId} />}

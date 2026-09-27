@@ -2,9 +2,7 @@ mod fs;
 mod search;
 mod terminal;
 mod watcher;
-
-#[cfg(windows)]
-mod everything;
+mod wfs;
 
 use tauri::Manager;
 
@@ -108,6 +106,7 @@ pub fn run() {
             fs::write_text,
             fs::read_bytes,
             fs::check_access,
+            fs::file_times,
             fs::create_file,
             fs::create_dir,
             fs::rename_path,
@@ -117,7 +116,6 @@ pub fn run() {
             terminal::open_terminal,
             search::search_files,
             search::search_status,
-            search::search_set_scope,
             watcher::watch_dir,
             watcher::unwatch_dir,
             set_close_to_tray,

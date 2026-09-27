@@ -1,57 +1,49 @@
-import { useWorkspace } from '../store/workspace'
 import { FileTree } from './FileTree'
-import { SearchBox, SearchResults } from './SearchPanel'
+import { IndexStatus, SearchBox, SearchResults } from './SearchPanel'
 import { QuickAccess } from './QuickAccess'
 import { useSearch } from '../lib/search'
 import { useT } from '../lib/i18n'
 
 export function Sidebar() {
   const t = useT()
-  const selectedDir = useWorkspace((s) => s.selectedDir)
-  const openInTerminal = useWorkspace((s) => s.openInTerminal)
-  const query = useSearch((s) => s.query)
+  const results = useSearch((s) => s.results)
+  const tab = useSearch((s) => s.tab)
+  // Both panels stay mounted (only hidden) so the tree's scroll position and
+  // the results list survive tab switches — see .sidebar-body CSS.
+  const showSearch = tab === 'search'
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-head">
-        <span className="sidebar-title">{t('sidebar.explorer')}</span>
+      <SearchBox />
+      <div className="sidebar-tabs" role="tablist">
         <button
-          className="btn-icon"
-          title={selectedDir ? t('sidebar.terminal', { path: selectedDir }) : t('sidebar.terminalHint')}
-          disabled={!selectedDir}
-          onClick={() => void openInTerminal()}
+          role="tab"
+          aria-selected={!showSearch}
+          className={`sidebar-tab${!showSearch ? ' is-active' : ''}`}
+          onClick={() => useSearch.setState({ tab: 'explorer' })}
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
-            <rect
-              x="1.5"
-              y="2.5"
-              width="13"
-              height="11"
-              rx="1.5"
-              stroke="currentColor"
-              strokeWidth="1.3"
-            />
-            <path
-              d="M4.2 6 6.6 8l-2.4 2M8.2 10.6h3.6"
-              stroke="currentColor"
-              strokeWidth="1.3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          {t('sidebar.explorer')}
+        </button>
+        <button
+          role="tab"
+          aria-selected={showSearch}
+          className={`sidebar-tab${showSearch ? ' is-active' : ''}`}
+          onClick={() => useSearch.setState({ tab: 'search' })}
+        >
+          {t('sidebar.searchTab')}
+          <span className="sidebar-tab-count">{results.length}</span>
         </button>
       </div>
-      <SearchBox />
       <div className="sidebar-body">
-        {query.trim() ? (
+        <div className="sidebar-pane sidebar-pane-explorer" hidden={showSearch}>
+          <QuickAccess />
+          <FileTree />
+        </div>
+        <div className="sidebar-pane" hidden={!showSearch}>
           <SearchResults />
-        ) : (
-          <>
-            <QuickAccess />
-            <FileTree />
-          </>
-        )}
+        </div>
       </div>
+      <IndexStatus />
     </aside>
   )
 }

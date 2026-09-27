@@ -58,7 +58,7 @@ const langComp = new Compartment()
 const readOnlyComp = new Compartment()
 const lineNumComp = new Compartment()
 
-function baseExtensions(tab: TabInfo): Extension[] {
+function baseExtensions(tab: TabInfo, docSync: Extension): Extension[] {
   const s = useSettings.getState()
   return [
     lineNumComp.of(s.lineNumbers ? lineNumbers() : []),
@@ -83,6 +83,11 @@ function baseExtensions(tab: TabInfo): Extension[] {
     wrapComp.of(s.wordWrap ? EditorView.lineWrapping : []),
     langComp.of([]),
     readOnlyComp.of(tab.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
+    // Passed in from the component: doc → store sync. It must ride along on
+    // every state this view adopts — states built on tab switch would
+    // otherwise go mute: edits stop reaching the store and Ctrl+S saves
+    // stale text.
+    docSync,
     keymap.of([
       { key: 'Mod-s', preventDefault: true, run: () => (void useWorkspace.getState().saveActive(), true) },
       { key: 'Mod-/', preventDefault: true, run: toggleComment },
@@ -134,6 +139,17 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
   /** The text this view last loaded or pushed to the store — lets the reload
    * effect tell "my own edit echoed back" from "an external change arrived". */
   const syncedText = useRef(tab.text)
+  /** Doc → store sync; created once, shared by every state the view adopts. */
+  const docSync = useRef<Extension>(
+    EditorView.updateListener.of((update) => {
+      if (!update.docChanged) return
+      const text = update.state.doc.toString()
+      syncedText.current = text
+      useWorkspace
+        .getState()
+        .editActive(groupRef.current, text, update.state.doc.lines)
+    }),
+  )
 
   // One view for the component's lifetime; states swap when the tab changes.
   useEffect(() => {
@@ -141,17 +157,7 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
       parent: host.current!,
       state: EditorState.create({
         doc: tabRef.current.text,
-        extensions: [
-          ...baseExtensions(tabRef.current),
-          EditorView.updateListener.of((update) => {
-            if (!update.docChanged) return
-            const text = update.state.doc.toString()
-            syncedText.current = text
-            useWorkspace
-              .getState()
-              .editActive(groupRef.current, text, update.state.doc.lines)
-          }),
-        ],
+        extensions: baseExtensions(tabRef.current, docSync.current),
       }),
     })
     view.current = v
@@ -209,7 +215,7 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
         v.setState(
           EditorState.create({
             doc: tab.text,
-            extensions: baseExtensions(tab),
+            extensions: baseExtensions(tab, docSync.current),
           }),
         )
         cancelLang.current?.()

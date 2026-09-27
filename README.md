@@ -61,12 +61,27 @@ edit.**
 | Office | .docx (docx-preview), .xlsx (SheetJS, truncated past 500 rows with a notice), .pptx (custom parser, text extraction) |
 | Binary / unknown | "Preview not supported" card — open with the system default app or reveal in Explorer |
 
-### 🔍 Everything-speed whole-disk file-name search
-Three tiers with automatic fallback:
-1. **Everything IPC** (detected at runtime — millisecond results, zero indexing cost)
-2. **Built-in index** (`ignore` parallel walk + `notify` incremental watching, fuzzy subsequence
-   matching, Chinese file names supported)
-3. Direct NTFS MFT reading as an optional future speed-up
+### 🔍 Instant whole-disk file-name search (built-in WFSearch engine)
+Search is powered by the bundled [WFSearch](https://github.com/mnigc/WFSearch) engine — it indexes
+NTFS directly from the MFT + USN journal: ~2 s for a million-file full index, live incremental
+updates after that.
+
+- The installer ships `wfs-server`; SVCode starts it on the first search and it shuts down
+  gracefully when SVCode exits
+- If WFSearch is already installed as a Windows service (`wfs-server install`), SVCode simply
+  reuses it — no elevation needed
+- SVCode talks to the engine over its loopback HTTP gateway and authenticates with the bearer
+  token the engine publishes at `%ProgramData%\WFSearch\http.token`, so **engine 0.1.0 or newer**
+  is required on both sides
+- The packaged engine version is pinned in `scripts/fetch-wfs.mjs`; a daily workflow watches the
+  upstream releases and opens a bump PR (`scripts/check-wfs.mjs`), so a new engine only reaches an
+  installer after that PR is merged
+- Query syntax: whitespace-separated AND terms, `*`/`?` globs, terms containing `\` match the full
+  path (that's what "search inside this folder" from the tree relies on)
+
+> Reading the MFT requires Administrator rights. On a plain-user SVCode, install the WFSearch
+> service once (elevated PowerShell: `wfs-server.exe install`) and whole-disk search works without
+> ever elevating the editor.
 
 ### 🌏 Also
 - Dark / light / follow-system theme; English & Simplified Chinese UI
@@ -90,14 +105,15 @@ The installer lets you choose: **install for all users** (UAC confirmation, any 
 **current user only** (no admin needed). Both modes let you pick the install directory, and
 upgrades go back to the same location automatically.
 
-> If [Everything](https://www.voidtools.com/) is running, search uses its IPC automatically for the
-> best experience; without it, SVCode quietly falls back to its own index.
+> The WFSearch engine ships inside the installer — search works out of the box. For the best
+> no-elevation experience, install it as a Windows service once (`wfs-server.exe install`).
 
 ## Build from source
 
 ```bash
 # Prerequisites: Rust stable (MSVC) + Node.js 22 + pnpm 9
 pnpm install
+pnpm fetch:wfs     # download the pinned WFSearch sidecar into src-tauri/binaries (not committed)
 pnpm tauri dev     # development
 pnpm tauri build   # package (NSIS + MSI)
 ```
@@ -115,8 +131,8 @@ SVCode (Tauri 2 window, WebView2)
 │   └── Binary resources via IPC byte streams → blob URLs (no asset protocol)
 └── Backend  Rust, kept thin
     ├── fs.rs       list_dir / read_text / write_text / copy / move / ...
-    ├── search.rs   Everything IPC first, built-in index fallback (watcher.rs keeps it fresh)
-    ├── everything.rs  Everything WM_COPYDATA IPC (Windows)
+    ├── search.rs   thin search commands → the WFSearch engine
+    ├── wfs.rs      WFSearch loopback HTTP gateway client + wfs-server sidecar lifecycle
     └── terminal.rs Open in Terminal
 ```
 
@@ -131,4 +147,4 @@ popup can escape.
 ## Tech stack
 
 Tauri 2 · React 19 · TypeScript · zustand · CodeMirror 6 · markdown-it · pdf.js · docx-preview ·
-SheetJS · Rust (`everything-ipc` · `ignore` · `notify` · `encoding_rs`)
+SheetJS · Rust (`notify` · `encoding_rs` · WFSearch sidecar)

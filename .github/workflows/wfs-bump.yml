@@ -1,0 +1,103 @@
+name: WFSearch 版本巡检
+
+# 每天对比 mnigc/WFSearch 的最新发布与 scripts/fetch-wfs.mjs 里锁定的引擎版本；
+# 有新版就自动开一个只改锁版本常量的 PR，合并之后下一次打包才会用新引擎。
+# 关键约束：安装包里的引擎永远来自人工确认过的 commit —— 巡检不提改动 main 的
+# PR，也不在构建流程里直接跟 latest（0.1.0 那次强制 token 的破坏性变更并没有升
+# protocol 号，protocol 对得上不代表兼容）。
+on:
+  schedule:
+    - cron: '0 1 * * *' # 北京时间 09:00
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 对比上游最新版本
+        id: check
+        shell: bash
+        run: |
+          node scripts/check-wfs.mjs > wfs-check.json
+          jq . wfs-check.json
+          {
+            echo "update=$(jq -r .updateAvailable wfs-check.json)"
+            echo "protocolChanged=$(jq -r .protocolChanged wfs-check.json)"
+            echo "upstreamProtocol=$(jq -r .upstreamProtocol wfs-check.json)"
+            echo "latest=$(jq -r .latest.version wfs-check.json)"
+            echo "pinned=$(jq -r .pinned.version wfs-check.json)"
+            echo "sha=$(jq -r .latest.sha256 wfs-check.json)"
+            echo "size=$(jq -r .latest.size wfs-check.json)"
+            echo "released=$(jq -r .releasedAt wfs-check.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 有新版本时提交升级 PR
+        if: steps.check.outputs.update == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST: ${{ steps.check.outputs.latest }}
+          PINNED: ${{ steps.check.outputs.pinned }}
+          SHA: ${{ steps.check.outputs.sha }}
+          SIZE: ${{ steps.check.outputs.size }}
+          RELEASED: ${{ steps.check.outputs.released }}
+          PROTOCOL_CHANGED: ${{ steps.check.outputs.protocolChanged }}
+          UPSTREAM_PROTOCOL: ${{ steps.check.outputs.upstreamProtocol }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="wfs-bump/v${LATEST}"
+          if gh pr list --state open --json headRefName --jq '.[].headRefName' | grep -qxF "$branch"; then
+            echo "已存在 $branch 的开放 PR，跳过"
+            exit 0
+          fi
+          # 同名分支可能来自上一次已合并的巡检（上游重新发过同一个 tag 时版本号
+          # 相同），往它上面再推会把历史改动重新算进新 PR。
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "远端分支 $branch 已存在，跳过（请手动处理）"
+            exit 0
+          fi
+
+          git checkout -b "$branch"
+          # --apply 会真的下载并校验 sha256，对不上就失败、不写文件
+          node scripts/check-wfs.mjs --apply
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/fetch-wfs.mjs
+          git commit -m "build: 内置 WFSearch 引擎升到 v${LATEST}"
+          git push -u origin "$branch"
+
+          {
+            echo "上游发布了 v${LATEST}（${RELEASED}），SVCode 目前打包用的是 v${PINNED}。"
+            echo
+            echo "| 项 | 值 |"
+            echo "| --- | --- |"
+            echo "| 版本 | v${PINNED} → v${LATEST} |"
+            echo "| sha256 | ${SHA} |"
+            echo "| 大小 | ${SIZE} B |"
+            echo "| 线协议 | ${UPSTREAM_PROTOCOL}（SVCode 客户端按 1 实现）|"
+            echo
+            if [ "$PROTOCOL_CHANGED" = 'true' ]; then
+              echo '> **注意**：上游线协议号变了，SVCode 的网关客户端（`src-tauri/src/wfs.rs`）大概率要跟着改，只换二进制不够。'
+              echo
+              echo '> 另外：协议号不变也不等于兼容 —— 0.1.0 的强制 token 就没升协议号。'
+              echo
+            fi
+            echo '合并后本 PR 只改锁版本常量，二进制仍由 CI 的 `node scripts/fetch-wfs.mjs` 在打包时按 sha256 拉取。'
+            echo
+            echo '## 合并前建议'
+            echo
+            echo '- [ ] 看上游 release notes：https://github.com/mnigc/WFSearch/releases/tag/v'"${LATEST}"
+            echo '- [ ] 本地 \`pnpm fetch:wfs\` 后对着活引擎跑 \`cargo test --lib -- wfs::tests --ignored\`'
+            echo '- [ ] 若客户端也要改，把改动放进这个 PR 或先提客户端 PR，再合这个'
+          } > body.md
+          gh pr create --title "build: 内置 WFSearch 引擎升到 v${LATEST}" --body-file body.md

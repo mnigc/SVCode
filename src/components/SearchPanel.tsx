@@ -3,26 +3,23 @@ import { useWorkspace } from '../store/workspace'
 import { SEARCH_LIMIT, useSearch, scopedQuery } from '../lib/search'
 import { basename, dirname } from '../lib/paths'
 import { useT } from '../lib/i18n'
-import { useSettings } from '../lib/settings'
 import { scrollIntoContainer } from '../lib/scrollIntoContainer'
 import { DIR_ICON, fileIcon } from '../lib/fileIcons'
 import { NodeIcon } from './NodeIcon'
+import { NodeMenu } from './NodeMenu'
 
-/** Input debounce — Everything-tier queries are instant anyway, this keeps
- * local-index keystroke storms cheap. */
+/** Input debounce — WFSearch answers in milliseconds, this only absorbs
+ * keystroke storms. */
 const QUERY_DEBOUNCE_MS = 150
 const ROW_H = 26
 
-/** Sidebar search box: input + backend status line. */
+/** Sidebar search box. */
 export function SearchBox() {
   const t = useT()
   const query = useSearch((s) => s.query)
   const setQuery = useSearch((s) => s.setQuery)
   const runQuery = useSearch((s) => s.runQuery)
-  const status = useSearch((s) => s.status)
   const pendingScope = useSearch((s) => s.pendingScope)
-  const refreshStatus = useSearch((s) => s.refreshStatus)
-  const searchScope = useSettings((s) => s.searchScope)
   // Drive roots have an empty basename ("C:\") — prefer the tree node's
   // display name ("系统 (C:)"), falling back to the path itself.
   const scopeName =
@@ -30,18 +27,6 @@ export function SearchBox() {
     (pendingScope ? basename(pendingScope) || pendingScope : '')
   const input = useRef<HTMLInputElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // One probe to learn the tier, then poll only while a local build is really
-  // running: the index now starts on the first query, so an idle session must
-  // not keep asking the backend.
-  useEffect(() => {
-    void refreshStatus()
-    const poll = setInterval(() => {
-      const st = useSearch.getState().status
-      if (st && st.source === 'local' && st.started && !st.ready) void refreshStatus()
-    }, 2000)
-    return () => clearInterval(poll)
-  }, [refreshStatus])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -59,7 +44,7 @@ export function SearchBox() {
     setQuery(value)
     if (timer.current) clearTimeout(timer.current)
     if (!value.trim()) {
-      useSearch.setState({ results: [], truncated: false })
+      useSearch.setState({ results: [], truncated: false, tab: 'explorer' })
       return
     }
     timer.current = setTimeout(() => void runQuery(value), QUERY_DEBOUNCE_MS)
@@ -102,7 +87,9 @@ export function SearchBox() {
           }}
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
-              onChange('')
+              // Escape just parks the results behind the tree — the × button
+              // (or Ctrl+A, Delete) is the way to actually clear the query.
+              useSearch.setState({ tab: 'explorer' })
               input.current?.blur()
             }
           }}
@@ -113,29 +100,39 @@ export function SearchBox() {
           </button>
         )}
       </div>
-      {searchScope === 'off' && status?.source !== 'everything' ? (
-        // Scope off silences the local tier entirely — say so instead of
-        // letting queries return silent empty results. Everything, when it is
-        // running, answers regardless of the scope, hence the exception.
-        <div className="search-status" title={t('search.scopeOffHint')}>
-          {t('search.scopeOff')}
-        </div>
-      ) : (
-        status &&
-        !query.trim() &&
-        (status.source === 'everything' || status.started) && (
-          <div
-            className="search-status"
-            title={status.source === 'everything' ? t('search.viaEverything') : t('search.viaLocal')}
-          >
-            {status.source === 'everything'
-              ? t('search.everythingReady')
-              : status.ready
-                ? t('search.indexed', { n: status.files.toLocaleString() })
-                : t('search.indexing', { n: status.files.toLocaleString() })}
-          </div>
-        )
-      )}
+    </div>
+  )
+}
+
+/** Engine/index readout, parked at the bottom of the sidebar. */
+export function IndexStatus() {
+  const t = useT()
+  const status = useSearch((s) => s.status)
+  const refreshStatus = useSearch((s) => s.refreshStatus)
+
+  // One probe at boot, then poll only until the engine is ready — the
+  // backend starts its sidecar on the first probe/status call, and the MFT
+  // index takes a few seconds to land.
+  useEffect(() => {
+    void refreshStatus()
+    const poll = setInterval(() => {
+      const st = useSearch.getState().status
+      if (!st || !st.ready) void refreshStatus()
+    }, 2000)
+    return () => clearInterval(poll)
+  }, [refreshStatus])
+
+  if (!status) return null
+  return (
+    <div
+      className="sidebar-foot"
+      title={status.ready || status.building ? t('search.viaWfs') : t('search.notReadyHint')}
+    >
+      {status.ready
+        ? t('search.indexed', { n: status.files.toLocaleString() })
+        : status.building
+          ? t('search.indexing', { n: status.files.toLocaleString() })
+          : t('search.notReady')}
     </div>
   )
 }
@@ -149,9 +146,26 @@ export function SearchResults() {
   const openFile = useWorkspace((s) => s.openFile)
   const revealPath = useWorkspace((s) => s.revealPath)
   const [selected, setSelected] = useState(0)
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string; isDir: boolean } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => setSelected(0), [results])
+
+  useEffect(() => {
+    if (!menu) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (!(e.target instanceof Element) || !e.target.closest('.ctx-menu')) setMenu(null)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenu(null)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menu])
 
   useEffect(() => {
     const list = listRef.current
@@ -183,15 +197,42 @@ export function SearchResults() {
   }
 
   return (
-    <div className="search-results" tabIndex={0} onKeyDown={onKeyDown} role="listbox" ref={listRef}>
+    <div
+      className="search-results"
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      role="listbox"
+      ref={listRef}
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <ListWindow
         results={results}
         selected={selected}
         onSelect={setSelected}
         onActivate={activate}
         query={query.trim()}
+        onContextMenu={(hit, i, e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setSelected(i)
+          setMenu({ x: e.clientX, y: e.clientY, path: hit.path, isDir: hit.isDir })
+        }}
       />
-      {results.length === 0 && <div className="tree-note search-empty">{t('search.noMatches')}</div>}
+      {menu && (
+        <NodeMenu
+          path={menu.path}
+          x={menu.x}
+          y={menu.y}
+          hint={{ isDir: menu.isDir }}
+          variant="search"
+          onClose={() => setMenu(null)}
+        />
+      )}
+      {results.length === 0 && (
+        <div className="tree-note search-empty">
+          {query.trim() ? t('search.noMatches') : t('search.typeToSearch')}
+        </div>
+      )}
       {truncated && (
         <div className="search-status">{t('search.truncated', { n: SEARCH_LIMIT })}</div>
       )}
@@ -206,12 +247,14 @@ function ListWindow({
   onSelect,
   onActivate,
   query,
+  onContextMenu,
 }: {
   results: { path: string; name: string; isDir: boolean }[]
   selected: number
   onSelect: (i: number) => void
   onActivate: (hit: { path: string; name: string; isDir: boolean }) => void
   query: string
+  onContextMenu: (hit: { path: string; name: string; isDir: boolean }, i: number, e: React.MouseEvent) => void
 }) {
   const scroller = useRef<HTMLDivElement>(null)
   const [range, setRange] = useState({ start: 0, end: 60 })
@@ -232,6 +275,17 @@ function ListWindow({
     recompute()
   }, [results.length, recompute])
 
+  // The list can sit display:none on its tab; coming back fires no scroll
+  // event, so recompute the window from the (restored) scrollTop when the
+  // scroller's box changes size — hidden (0) to shown covers tab switches.
+  useEffect(() => {
+    const el = scroller.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => recompute())
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [recompute])
+
   return (
     <div ref={scroller} className="search-window" onScroll={recompute}>
       <div style={{ height: results.length * ROW_H, position: 'relative' }}>
@@ -249,6 +303,7 @@ function ListWindow({
                 onSelect(i)
                 onActivate(hit)
               }}
+              onContextMenu={(e) => onContextMenu(hit, i, e)}
               onMouseEnter={() => onSelect(i)}
             >
               <NodeIcon spec={hit.isDir ? DIR_ICON : fileIcon(hit.path)} />

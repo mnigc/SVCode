@@ -56,11 +56,20 @@
 | Office | .docx（docx-preview）、.xlsx（SheetJS，超 500 行截断并提示）、.pptx（自写解析提取文字） |
 | 二进制/不识别 | 「不支持预览」卡片，一键用系统默认程序打开或在资源管理器中显示 |
 
-### 🔍 Everything 级全盘文件名搜索
-三层方案自动降级：
-1. **Everything IPC**（运行时检测，毫秒级结果、零索引成本）
-2. **自建索引**（`ignore` 并行遍历 + `notify` 增量监视，模糊子序列匹配、中文文件名可搜）
-3. MFT 直读为后续可选项
+### 🔍 全盘文件名秒级搜索（内置 WFSearch 引擎）
+搜索由自带的 [WFSearch](https://github.com/mnigc/WFSearch) 引擎提供 —— 直读 NTFS 的
+MFT + USN 日志建索引，百万级文件全量索引约 2 秒，增量实时跟进：
+
+- 安装包内置 `wfs-server`，SVCode 首次搜索时自动拉起；退出时引擎随之优雅关闭
+- 若本机已把 WFSearch 装成 Windows 服务（`wfs-server install`），SVCode 直接复用，无需管理员权限
+- SVCode 走引擎的回环 HTTP 网关，并用引擎启动时发布的 token（`%ProgramData%\WFSearch\http.token`）
+  鉴权，因此两侧都需 **引擎 0.1.0 或更新**
+- 打进安装包的引擎版本锁在 `scripts/fetch-wfs.mjs`；每日巡检上游发布并自动提「升锁版本」的 PR
+  （`scripts/check-wfs.mjs`），合并后下一次打包才用新版
+- 查询语法：空格分词 AND、`*`/`?` 通配、含 `\` 的词按全路径匹配（点文件夹「在其中搜索」即靠它）
+
+> 注意：直接读 MFT 需要管理员权限。普通权限运行 SVCode 时，建议一次性安装 WFSearch
+> 服务（管理员 PowerShell 执行 `wfs-server.exe install`），之后 SVCode 免提权即可搜索全盘。
 
 ### 🌏 其他
 - 深色 / 亮色 / 跟随系统主题；中英双语界面
@@ -82,14 +91,15 @@
 或**仅为当前用户安装**（免管理员）。两种方式都可自选安装目录，升级时自动记住上次的
 安装位置原位升级。
 
-> 如果本机在运行 [Everything](https://www.voidtools.com/)，搜索会自动走它的 IPC，体验最佳；
-> 没装也没关系，会自动落到自建索引。
+> 搜索引擎 WFSearch 已随安装包内置，开箱即用；追求免提权的最佳体验，可先把
+> `wfs-server.exe install` 装成 Windows 服务。
 
 ## 从源码构建
 
 ```bash
 # 前置：Rust stable (MSVC) + Node.js 22 + pnpm 9
 pnpm install
+pnpm fetch:wfs     # 拉取锁定版本的 WFSearch 引擎到 src-tauri/binaries（不入库）
 pnpm tauri dev     # 开发调试
 pnpm tauri build   # 打包（NSIS + MSI）
 ```
@@ -106,8 +116,8 @@ SVCode (Tauri 2 窗口, WebView2)
 │   └── 二进制资源走 IPC 字节流 → blob URL，不用 asset protocol
 └── 后端  Rust，尽量薄
     ├── fs.rs       list_dir / read_text / write_text / copy / move / ...
-    ├── search.rs   Everything IPC 优先，自建索引兜底（watcher.rs 增量维护）
-    ├── everything.rs  Everything WM_COPYDATA IPC（Windows）
+    ├── search.rs   搜索命令薄代理 → WFSearch 引擎
+    ├── wfs.rs      WFSearch 回环 HTTP 网关客户端 + wfs-server sidecar 生命周期
     └── terminal.rs 在终端中打开
 ```
 
@@ -119,4 +129,4 @@ HTML 文件预览则在全沙箱 iframe（禁脚本/表单/弹窗）中渲染，
 
 ## 技术栈
 
-Tauri 2 · React 19 · TypeScript · zustand · CodeMirror 6 · markdown-it · pdf.js · docx-preview · SheetJS · Rust（`everything-ipc` · `ignore` · `notify` · `encoding_rs`）
+Tauri 2 · React 19 · TypeScript · zustand · CodeMirror 6 · markdown-it · pdf.js · docx-preview · SheetJS · Rust（`notify` · `encoding_rs` · WFSearch sidecar）

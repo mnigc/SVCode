@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
 import { create } from 'zustand'
-import { openPath } from '@tauri-apps/plugin-opener'
+import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
 import { useWorkspace, THIS_PC, IS_WINDOWS, type NodeInfo } from '../store/workspace'
 import { useQuickAccess } from '../store/quickAccess'
+import { useSearch } from '../lib/search'
 import { useSettings } from '../lib/settings'
 import { basename, dirname, isRootPath, isUncShareRoot } from '../lib/paths'
 import { useT, t } from '../lib/i18n'
@@ -51,6 +52,7 @@ export function NodeMenu({
   x,
   y,
   hint,
+  variant = 'fs',
   onClose,
 }: {
   path: string
@@ -59,6 +61,9 @@ export function NodeMenu({
   /** Facts the caller knows but the tree doesn't — Quick Access rows for
    * folders absent from the tree (incl. deleted ones) pass this. */
   hint?: { isDir?: boolean; missing?: boolean }
+  /** 'search' = results-list flavor: no inline create (its inputs render in
+   * tree rows that may not be visible), plus a 定位 jump-to-tree item. */
+  variant?: 'fs' | 'search'
   onClose: () => void
 }) {
   const stored = useWorkspace((s) => s.nodes[path]) as NodeInfo | undefined
@@ -155,18 +160,39 @@ export function NodeMenu({
       })
   }
 
+  const reveal = () => {
+    void revealItemInDir(path).catch((err) => {
+      useWorkspace.setState({ notice: t('card.openFailed', { msg: String(err) }) })
+    })
+  }
+
   const items: ReactNode[] = []
-  if (isDir) {
+  if (variant === 'search') {
     items.push(
-      item(t('tree.newFile'), () => void startCreate('new-file'), { disabled: !canCreate }),
-      item(t('tree.newFolder'), () => void startCreate('new-dir'), { disabled: !canCreate }),
-      <div className="menu-sep" key="s1" />,
+      item(t('tree.locate'), () => {
+        // The tree stays mounted behind the results — switch to it and
+        // reveal; the query and its scroll position survive untouched.
+        useSearch.setState({ tab: 'explorer' })
+        void ws.revealPath(path)
+      }),
+      <div className="menu-sep" key="s0" />,
     )
+  }
+  if (isDir) {
+    if (variant === 'fs') {
+      items.push(
+        item(t('tree.newFile'), () => void startCreate('new-file'), { disabled: !canCreate }),
+        item(t('tree.newFolder'), () => void startCreate('new-dir'), { disabled: !canCreate }),
+        <div className="menu-sep" key="s1" />,
+      )
+    }
+    items.push(item(t('tree.reveal'), reveal, { disabled: missing }))
   } else {
     items.push(
       item(t('tree.open'), () => void ws.openFile(path)),
       item(t('tree.openToSide'), () => void ws.openToSide(path)),
       item(t('tree.openExternal'), () => openExternal(path)),
+      item(t('tree.reveal'), reveal),
     )
   }
   // Copying a whole drive is not a real workflow, and pinning one to Quick

@@ -8,14 +8,13 @@ export interface SearchHit {
 }
 
 export interface SearchBackendStatus {
-  /** Index fully built (local tier) or Everything answering (everything tier). */
+  /** Engine answering and at least one drive fully indexed. */
   ready: boolean
-  /** A build has been kicked off — false while the local index is still idle,
-   * which is the normal state until the first search of the session. */
-  started: boolean
+  /** Engine answering but still building its index. */
+  building: boolean
   files: number
-  /** 'everything' = Everything IPC, 'local' = self-built index. */
-  source: 'everything' | 'local'
+  /** 'wfs' = the bundled WFSearch engine. */
+  source: 'wfs'
 }
 
 interface SearchState {
@@ -24,7 +23,9 @@ interface SearchState {
   /** null = fewer than LIMIT hits; anything over the cap isn't fetched. */
   truncated: boolean
   status: SearchBackendStatus | null
-  /** Folder clicked in the tree, offered as a search scope. Consumed when
+  /** Which sidebar panel is shown while a query has results; the tree and
+   * the results list both stay mounted, so reveals/定位 never clear it. */
+  tab: 'explorer' | 'search'  /** Folder clicked in the tree, offered as a search scope. Consumed when
    * the search input gains focus — until then nothing runs. */
   pendingScope: string | null
 
@@ -58,6 +59,7 @@ export const useSearch = create<SearchState>((set) => ({
   results: [],
   truncated: false,
   status: null,
+  tab: 'explorer',
   pendingScope: null,
 
   setQuery: (q) => set({ query: q }),
@@ -69,7 +71,7 @@ export const useSearch = create<SearchState>((set) => ({
 
   runQuery: async (q) => {
     if (!q.trim()) {
-      set({ results: [], truncated: false })
+      set({ results: [], truncated: false, tab: 'explorer' })
       return
     }
     try {
@@ -78,7 +80,7 @@ export const useSearch = create<SearchState>((set) => ({
         limit: SEARCH_LIMIT,
       })
       // Ignore stale responses that arrive after a newer query.
-      if (useSearch.getState().query === q) set({ results: res.hits, truncated: res.truncated })
+      if (useSearch.getState().query === q) set({ results: res.hits, truncated: res.truncated, tab: 'search' })
     } catch {
       if (useSearch.getState().query === q) set({ results: [], truncated: false })
     }
@@ -93,12 +95,3 @@ export const useSearch = create<SearchState>((set) => ({
     }
   },
 }))
-
-/**
- * Tell the backend which drives the local index may walk. It rebuilds only
- * when the value actually changes, so pushing the stored setting on boot is
- * free. Typed as a plain string to keep this module off settings.ts.
- */
-export function applySearchScope(mode: string) {
-  void invoke('search_set_scope', { mode }).catch(() => {})
-}

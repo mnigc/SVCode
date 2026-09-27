@@ -2,6 +2,7 @@ use serde::Serialize;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Above this a text file opens read-only; the editor is not built for huge files.
 const READ_ONLY_BYTES: u64 = 5 * 1024 * 1024;
@@ -105,6 +106,30 @@ pub fn read_text(path: String) -> Result<TextContent, String> {
         eol,
         size,
         read_only: size > READ_ONLY_BYTES,
+    })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileTimes {
+    /// Unix ms. `None` when the filesystem refuses to report it (some
+    /// network shares and pre-NTFS volumes have no creation time).
+    pub created_ms: Option<i64>,
+    pub modified_ms: Option<i64>,
+}
+
+fn ms_since_epoch(t: SystemTime) -> i64 {
+    t.duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+#[tauri::command]
+pub fn file_times(path: String) -> Result<FileTimes, String> {
+    let md = fs::metadata(&path).map_err(err)?;
+    Ok(FileTimes {
+        created_ms: md.created().ok().map(ms_since_epoch),
+        modified_ms: md.modified().ok().map(ms_since_epoch),
     })
 }
 

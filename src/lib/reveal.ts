@@ -1,4 +1,5 @@
 import { useWorkspace } from '../store/workspace'
+import { useSearch } from './search'
 import { scrollIntoContainer } from './scrollIntoContainer'
 
 /**
@@ -34,6 +35,9 @@ export function scrollTreeRow(path: string) {
  * Used by tab clicks and search-result reveals.
  */
 export async function revealInTree(path: string) {
+  // The tree lives on the explorer side — show it (results stay untouched
+  // behind the search view).
+  useSearch.setState({ tab: 'explorer' })
   await useWorkspace.getState().revealPath(path)
   scrollTreeRow(path)
 }

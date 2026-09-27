@@ -76,6 +76,10 @@ export interface TabInfo {
   /** On-disk size in bytes; text tabs learn it from read_text/write_text,
    * binary tabs from the preview viewers' byte buffers. */
   size: number | null
+  /** Unix ms from the filesystem (see the file_times command); null until
+   * fetched or when the volume refuses to report one. */
+  createdMs: number | null
+  modifiedMs: number | null
   dirty: boolean
   readOnly: boolean
   loading: boolean
@@ -97,10 +101,18 @@ interface TextContent {
   readOnly: boolean
 }
 
+interface FileTimes {
+  createdMs: number | null
+  modifiedMs: number | null
+}
+
 interface WorkspaceState {
   nodes: Record<string, NodeInfo>
   /** Folder the terminal button and status bar point at. */
   selectedDir: string | null
+  /** Whether the last tree pick was a folder (vs an opened/focused file) —
+   * decides whether the status bar shows selectedDir or the active file. */
+  selectedIsDir: boolean
   notice: string | null
   /** Drive listing in flight (loadSystemTree is the only writer). */
   rootLoading: boolean
@@ -360,6 +372,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       encoding: 'utf-8',
       eol: 'lf',
       size: null,
+      createdMs: null,
+      modifiedMs: null,
       dirty: false,
       readOnly: false,
       loading: kind === 'text' || kind === 'markdown',
@@ -395,6 +409,21 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     }
   }
 
+  /** Timestamps for the group status bar — best-effort: a vanished file
+   * simply keeps the cells empty rather than raising a notice. */
+  const fetchTimes = async (path: string) => {
+    try {
+      const ft = await invoke<FileTimes>('file_times', { path })
+      set((s) => ({
+        tabs: s.tabs.map((t) =>
+          t.path === path ? { ...t, createdMs: ft.createdMs, modifiedMs: ft.modifiedMs } : t,
+        ),
+      }))
+    } catch {
+      /* no times to show */
+    }
+  }
+
   /** Re-read a tab after an external on-disk change. Identical content is a
    * no-op (the watcher echo of our own save must not touch the view), a real
    * change resets the buffer as clean, and an unreadable file keeps its
@@ -403,6 +432,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
   const reloadTab = async (path: string) => {
     try {
       const content = await invoke<TextContent>('read_text', { path })
+      void fetchTimes(path)
       set((s) => ({
         tabs: s.tabs.map((tab) => {
           if (tab.path !== path) return tab
@@ -432,9 +462,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     }
   }
 
-  /** Focus `path` in the group it lives in (tab exists somewhere). */
+  /** Focus `path` in the group it lives in (tab exists somewhere). Tab
+   * clicks count as picking the file, so the status bar follows. */
   const focusTab = (path: string, group: number) =>
-    set((s) => ({ activeGroup: group, groupActive: { ...s.groupActive, [group]: path } }))
+    set((s) => ({
+      activeGroup: group,
+      groupActive: { ...s.groupActive, [group]: path },
+      selectedIsDir: false,
+    }))
 
   /**
    * Remap a renamed/moved path and its whole subtree through nodes, tabs and
@@ -516,6 +551,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
   return {
     nodes: {},
     selectedDir: null,
+    selectedIsDir: false,
     notice: null,
     rootLoading: false,
     rootError: null,
@@ -623,7 +659,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     toggleNode: async (path) => {
       const current = get().nodes[path]
       if (!current) return
-      set({ selectedDir: path === THIS_PC ? null : path, notice: null })
+      set({ selectedDir: path === THIS_PC ? null : path, selectedIsDir: true, notice: null })
 
       if (current.expanded) {
         patch(path, { expanded: false })
@@ -664,6 +700,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     const group = opened ? opened.group : get().activeGroup
     set({
       selectedDir: dirname(path),
+      selectedIsDir: false,
       notice: null,
     })
     if (opened) {
@@ -673,6 +710,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     const tab = beginTab(path, group)
     set((s) => ({ tabs: [...s.tabs, tab], groupActive: { ...s.groupActive, [group]: path } }))
+    void fetchTimes(path)
     if (!tab.loading) return
     syncTabWatches()
     await readTab(path)
@@ -683,6 +721,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     if (opened) {
       set({
         selectedDir: dirname(path),
+        selectedIsDir: false,
         notice: null,
       })
       focusTab(path, opened.group)
@@ -706,8 +745,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       groupView: { ...s.groupView, [id]: useSettings.getState().defaultView },
       activeGroup: id,
       selectedDir: dirname(path),
+      selectedIsDir: false,
       notice: null,
     })
+    void fetchTimes(path)
     if (!tab.loading) return
     syncTabWatches()
     await readTab(path)
@@ -801,6 +842,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
             t.path === tab.path ? { ...t, dirty: false, original: t.text, size: newSize } : t,
           ),
         }))
+        void fetchTimes(tab.path)
       } catch (err) {
         set({ notice: t('ws.saveFailed', { msg: describe(err) }) })
       }

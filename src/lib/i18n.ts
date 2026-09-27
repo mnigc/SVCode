@@ -56,15 +56,6 @@ const dict = {
     zh: '在文件树中显示系统隐藏文件（如 desktop.ini）',
     en: 'Show system-hidden files in the tree (e.g. desktop.ini)',
   },
-  'settings.search': { zh: '搜索', en: 'Search' },
-  'settings.searchScope': { zh: '文件名索引范围', en: 'File-name Index Scope' },
-  'settings.searchScope.desc': {
-    zh: '首次搜索时才开始建索引；Everything 在运行时会直接接管搜索，不占用内存',
-    en: 'The index is built on the first search, not at startup. Everything takes over when it is running.',
-  },
-  'settings.scope.off': { zh: '关闭', en: 'Off' },
-  'settings.scope.system': { zh: '仅系统盘', en: 'System drive' },
-  'settings.scope.all': { zh: '所有磁盘', en: 'All drives' },
   'settings.reset': { zh: '恢复默认设置', en: 'Reset to Defaults' },
   'settings.done': { zh: '完成', en: 'Done' },
 
@@ -75,7 +66,7 @@ const dict = {
     en: 'SVCode is built to open, view and fix files fast: browse the whole disk like Explorer, search file names like Everything, preview on open, edit right away.',
   },
   'about.featPreview': { zh: 'Markdown / 图片 / PDF / Office 文档即时预览', en: 'Instant preview of Markdown, images, PDF & Office documents' },
-  'about.featSearch': { zh: '全盘文件名搜索（Everything IPC 或自建索引）', en: 'Whole-disk file-name search (Everything IPC or built-in index)' },
+  'about.featSearch': { zh: '全盘文件名秒级搜索（内置 WFSearch 引擎）', en: 'Instant whole-disk file-name search (built-in WFSearch engine)' },
   'about.featEditor': { zh: 'CodeMirror 6 编辑内核，语法高亮、查找替换', en: 'CodeMirror 6 core with syntax highlighting and find & replace' },
   'about.featMisc': { zh: '深浅主题、中英界面、会话恢复、草稿保护', en: 'Dark & light themes, bilingual UI, session restore, draft protection' },
   'about.tech': { zh: 'Tauri 2 · React · CodeMirror 6 · Windows', en: 'Tauri 2 · React · CodeMirror 6 · Windows' },
@@ -126,10 +117,14 @@ const dict = {
 
   // status bar
   'status.thisPC': { zh: '此电脑', en: 'This PC' },
+  'status.copyPath': { zh: '复制路径', en: 'Copy path' },
+  'status.copied': { zh: '已复制', en: 'Copied' },
   'status.dismiss': { zh: '点击忽略', en: 'Click to dismiss' },
   'status.readonly': { zh: '只读', en: 'Read-only' },
   'status.chars': { zh: '{n} 字符', en: '{n} chars' },
   'status.lines': { zh: '{n} 行', en: '{n} lines' },
+  'status.modified': { zh: '修改于 {time}', en: 'Modified {time}' },
+  'status.created': { zh: '创建于 {time}', en: 'Created {time}' },
   'status.tabs': { zh: '{n} 个标签', en: '{n} tabs' },
 
   // file kinds (status bar)
@@ -140,25 +135,23 @@ const dict = {
 
   // sidebar
   'sidebar.explorer': { zh: '资源管理器', en: 'Explorer' },
+  'sidebar.searchTab': { zh: '搜索结果', en: 'Search' },
   'sidebar.quickAccess': { zh: '快速访问', en: 'Quick Access' },
-  'sidebar.terminal': { zh: '在终端中打开 {path}', en: 'Open {path} in Terminal' },
-  'sidebar.terminalHint': { zh: '先在左侧选中一个文件夹', en: 'Pick a folder on the left first' },
 
   // search
   'search.placeholder': { zh: '搜索文件名 (Ctrl+E)', en: 'Search file names (Ctrl+E)' },
   'search.placeholderScope': { zh: '搜索「{name}」里的文件', en: 'Search inside "{name}"' },
   'search.clear': { zh: '清空', en: 'Clear' },
-  'search.viaEverything': { zh: '走 Everything 索引', en: 'Powered by the Everything index' },
-  'search.viaLocal': { zh: 'SVCode 自建索引', en: 'SVCode local index' },
-  'search.everythingReady': { zh: 'Everything 已接管搜索', en: 'Searching via Everything' },
+  'search.viaWfs': { zh: '由内置 WFSearch 引擎提供', en: 'Powered by the built-in WFSearch engine' },
   'search.indexed': { zh: '{n} 个文件已索引', en: '{n} files indexed' },
   'search.indexing': { zh: '正在建索引：{n} 个文件…', en: 'Building index: {n} files…' },
-  'search.scopeOff': { zh: '搜索已关闭（可在设置中开启）', en: 'Search is off (enable it in Settings)' },
-  'search.scopeOffHint': {
-    zh: '在 设置 → 搜索 → 文件名索引范围 中开启；Everything 在运行时不受此设置影响',
-    en: 'Enable it under Settings → Search → Index Scope. Everything, when running, is unaffected.',
+  'search.notReady': { zh: 'WFSearch 引擎未就绪', en: 'WFSearch engine not ready' },
+  'search.notReadyHint': {
+    zh: 'SVCode 会自动拉起内置的 WFSearch 引擎；全盘索引需要管理员权限，若长期未就绪请以管理员身份运行，或预先将 WFSearch 安装为 Windows 服务',
+    en: 'SVCode starts the bundled WFSearch engine automatically. Whole-disk indexing needs Administrator rights: run SVCode elevated, or install WFSearch as a Windows service.',
   },
   'search.noMatches': { zh: '没有匹配的文件', en: 'No matching files' },
+  'search.typeToSearch': { zh: '输入文件名开始搜索', en: 'Type a file name to search' },
   'search.truncated': {
     zh: '仅显示前 {n} 条，输入更多字符缩小范围',
     en: 'Showing first {n} results; type more to narrow down',
@@ -215,6 +208,8 @@ const dict = {
   'tree.newFolder': { zh: '新建文件夹', en: 'New Folder' },
   'tree.open': { zh: '打开', en: 'Open' },
   'tree.openExternal': { zh: '使用系统默认程序打开', en: 'Open with default app' },
+  'tree.reveal': { zh: '在资源管理器中显示', en: 'Reveal in File Explorer' },
+  'tree.locate': { zh: '定位', en: 'Locate in Tree' },
   'tree.copy': { zh: '复制', en: 'Copy' },
   'tree.cut': { zh: '剪切', en: 'Cut' },
   'tree.paste': { zh: '粘贴', en: 'Paste' },

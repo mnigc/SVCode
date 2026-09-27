@@ -207,31 +207,87 @@
   width: 100%;
 }
 
-.sidebar-head {
+.sidebar-tabs {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 10px 10px 6px 14px;
-  flex: 0 0 auto;
+  gap: 4px;
+  padding: 0 8px 6px 10px;
 }
 
-.sidebar-title {
+.sidebar-tab {
+  font: inherit;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 400;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--fg-faint);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 7px;
+  cursor: default;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 60%;
+}
+
+.sidebar-tab:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.sidebar-tab.is-active {
+  background: var(--bg-active);
+  color: var(--fg);
+}
+
+.sidebar-tab-count {
+  flex: 0 0 auto;
+  margin-left: 5px;
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.7;
 }
 
 .sidebar-body {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Explorer and Search panels are both kept mounted (toggled via [hidden])
+   so switching views — or 定位 from a result — never loses either side's
+   scroll position. */
+.sidebar-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-pane[hidden] {
+  display: none;
+}
+
+.sidebar-pane-explorer {
   overflow: auto;
   padding: 0 8px 12px;
+}
+
+/* Engine readout, pinned to the bottom of the sidebar. */
+.sidebar-foot {
+  flex: 0 0 auto;
+  padding: 6px 14px 10px;
+  font-size: 11px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tree-empty {
@@ -937,6 +993,32 @@
   max-width: 40vw;
 }
 
+/* Selected file/folder path (leftmost cell) + its copy button. The text
+ * ellipsizes while the button stays pinned at the right edge. */
+.status-path {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.status-path-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-copy {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--fg-faint);
+}
+
+.status-copy:hover {
+  color: var(--fg);
+}
+
 .status-spacer {
   flex: 1;
 }
@@ -1028,7 +1110,7 @@
 
 .search-panel {
   flex: 0 0 auto;
-  padding: 0 8px 4px;
+  padding: 10px 8px 6px;
 }
 
 .search-box {

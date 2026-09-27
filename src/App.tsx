@@ -117,10 +117,11 @@ export default function App() {
         e.preventDefault()
         cycleTab(e.shiftKey ? -1 : 1)
       } else if (key === 'f' || key === 'h') {
-        // Let the editor's own keymap win when it has focus; this catches the
-        // case where focus is elsewhere in the UI.
-        const el = document.activeElement
-        if (el?.closest('.cm-editor')) return
+        // CodeMirror's keymap already consumed it (editor body focused →
+        // panel opened) — it preventDefaults on a match. Anything else —
+        // focus elsewhere, or in the search panel's own input where CM binds
+        // nothing — must NOT fall through to WebView2's built-in find bar.
+        if (e.defaultPrevented) return
         e.preventDefault()
         window.dispatchEvent(new CustomEvent('svcode:find'))
       } else if (key === '`' && s.selectedDir) {
