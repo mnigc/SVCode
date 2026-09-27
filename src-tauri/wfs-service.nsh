@@ -27,10 +27,44 @@
 !define WFS_MARK_VALUE 'WfsServiceOwned'
 
 ; nsExec always leaves its exit code on the stack; nobody needs it here.
+;
+; Never route a path through this macro: NSIS eats the quotes around a command
+; string when it arrives as a macro parameter, so `C:\Program Files\...` reaches
+; nsExec unquoted and it launches `C:\Program` instead. The result is a silent
+; exit code 1, which is how the first version of this hook managed to skip
+; service registration on every machine that installed into Program Files.
+; Anything with a path in it gets its own nsExec call, written out in full.
 !macro WfsQuiet cmd
   nsExec::ExecToLog ${cmd}
   Pop $9
 !macroend
+
+; Registers the engine and claims ownership only once the SCM really has the
+; service -- the exit code of `install` is not evidence of anything.
+Function WfsServiceRegister
+  StrCpy $3 0
+  ${Do}
+    IntOp $3 $3 + 1
+    ; `install` registers with itself as the image path, so it must be run from
+    ; the copy, not from $INSTDIR.
+    nsExec::ExecToStack '"${WFS_EXE}" install'
+    Pop $4
+    Pop $5
+    nsExec::ExecToStack 'sc.exe query ${WFS_SVC_NAME}'
+    Pop $6
+    Pop $7
+    ${If} $6 == 0
+      WriteRegDWORD HKLM '${WFS_MARK_KEY}' '${WFS_MARK_VALUE}' 1
+      Return
+    ${EndIf}
+    ${If} $3 >= 5
+      DetailPrint 'WFSearch: could not register the service ($4): $5'
+      DetailPrint 'WFSearch: whole-disk search stays unavailable until it is -- run "$PROGRAMFILES64\WFSearch\wfs-server.exe" install from an elevated terminal.'
+      Return
+    ${EndIf}
+    Sleep 2000
+  ${Loop}
+FunctionEnd
 
 Function WfsServiceInstall
   SetRegView 64
@@ -63,10 +97,7 @@ Function WfsServiceInstall
   ${EndIf}
 
   ${If} $0 != 0
-    ; `install` registers with itself as the image path, so it must be run from
-    ; the copy, not from $INSTDIR.
-    !insertmacro WfsQuiet '"${WFS_EXE}" install'
-    WriteRegDWORD HKLM '${WFS_MARK_KEY}' '${WFS_MARK_VALUE}' 1
+    Call WfsServiceRegister
   ${EndIf}
 
   ; Registration leaves the service stopped on some machines; `install` may
@@ -83,7 +114,10 @@ Function un.WfsServiceRemove
   ${EndIf}
 
   !insertmacro WfsQuiet 'net stop ${WFS_SVC_NAME}'
-  !insertmacro WfsQuiet '"${WFS_EXE}" uninstall'
+  ; Written out rather than through WfsQuiet: the path must keep its quotes.
+  nsExec::ExecToStack '"${WFS_EXE}" uninstall'
+  Pop $0
+  Pop $1
   Delete '${WFS_EXE}'
   ; Not /r: if a standalone WFSearch left files here, they are not ours to remove.
   RMDir '${WFS_DIR}'
