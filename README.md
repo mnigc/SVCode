@@ -101,7 +101,7 @@ Grab the latest installer from [**Releases**](https://github.com/mnigc/SVCode/re
 the whole editor ships in a download of just a few megabytes:
 
 - `SVCode_x.y.z_x64-setup.exe` — NSIS installer, **≈ 4.4 MB** (recommended)
-- `SVCode_x.y.z_x64_en-US.msi` — MSI package, **≈ 5.8 MB** (the engine is embedded twice: once for
+- `SVCode_x.y.z_x64_en-US.msi` — MSI package, **≈ 5.5 MB** (the engine is embedded twice: once for
   the app folder, once for the service directory)
 
 Requires Windows 10 or later (renders with the bundled WebView2).

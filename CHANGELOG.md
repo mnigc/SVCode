@@ -38,7 +38,7 @@
 
 - 只为所有用户安装（UAC 确认、可选安装目录与盘符），升级自动回到同一位置。注册服务必须要管理员权限，因此不提供「仅为当前用户安装」；代价是自动更新从此会弹一次 UAC。
 - 注册服务在两条打包路上分别实现：NSIS 用 `installerHooks`（`src-tauri/wfs-service.nsh`），MSI 用 WiX fragment（`src-tauri/wfs-service.wxs`）；卸载按 HKLM 的所有权标记判断该不该停服删服。
-- 体积：NSIS 安装包约 4.4 MB，MSI 约 5.8 MB —— WiX 的 `ServiceInstall` 要求服务二进制本身是包内组件，引擎被打进两份；NSIS 只在安装时现场复制。
+- 体积：NSIS 安装包约 4.4 MB，MSI 约 5.5 MB —— WiX 的 `ServiceInstall` 要求服务二进制本身是包内组件，引擎被打进两份；NSIS 只在安装时现场复制。
 - 系统托盘后台运行：左键唤起、右键菜单，关窗默认缩到托盘（设置可关），单实例再次启动直接唤起已有窗口。
 - 「检查更新」用 Tauri 官方 updater，更新地址固定为 GitHub Releases 的 `latest.json`；安装包带 minisign 签名，下载后校验通过才安装。启动 3 秒后静默检查一次、24 小时内最多一次，发现新版只在「文件」菜单的「检查更新」右侧显示版本号，不弹窗打断；关于对话框里可直接下载并安装、显示进度，装完自动重开。
 
