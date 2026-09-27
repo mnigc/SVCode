@@ -66,10 +66,14 @@ Search is powered by the bundled [WFSearch](https://github.com/mnigc/WFSearch) e
 NTFS directly from the MFT + USN journal: ~2 s for a million-file full index, live incremental
 updates after that.
 
-- The installer ships `wfs-server`; SVCode starts it on the first search and it shuts down
-  gracefully when SVCode exits
-- If WFSearch is already installed as a Windows service (`wfs-server install`), SVCode simply
-  reuses it — no elevation needed
+- The installer registers the bundled `wfs-server` as a Windows service (LocalSystem, started at
+  boot) — that is what lets SVCode search the whole disk without ever being elevated
+- The service runs from `%ProgramFiles%\WFSearch\wfs-server.exe`, a copy kept outside the app
+  folder so an upgrade never fights a locked binary
+- If a WFSearch service is already on the machine from a standalone install, SVCode reuses it and
+  the installer leaves it untouched (and does not delete it on uninstall)
+- SVCode still starts the sidecar from its own folder when nothing holds the port; that fallback
+  only indexes volumes when SVCode itself is run elevated
 - SVCode talks to the engine over its loopback HTTP gateway and authenticates with the bearer
   token the engine publishes at `%ProgramData%\WFSearch\http.token`, so **engine 0.1.0 or newer**
   is required on both sides
@@ -79,9 +83,9 @@ updates after that.
 - Query syntax: whitespace-separated AND terms, `*`/`?` globs, terms containing `\` match the full
   path (that's what "search inside this folder" from the tree relies on)
 
-> Reading the MFT requires Administrator rights. On a plain-user SVCode, install the WFSearch
-> service once (elevated PowerShell: `wfs-server.exe install`) and whole-disk search works without
-> ever elevating the editor.
+> Reading the MFT is an administrator-only operation, which is why the engine runs as a service.
+> If a volume is reported as failed, `"%ProgramFiles%\WFSearch\wfs-server.exe" doctor` probes every
+> ioctl and prints where access is refused.
 
 ### 🌏 Also
 - Dark / light / follow-system theme; English & Simplified Chinese UI
@@ -97,16 +101,17 @@ Grab the latest installer from [**Releases**](https://github.com/mnigc/SVCode/re
 the whole editor ships in a download of just a few megabytes:
 
 - `SVCode_x.y.z_x64-setup.exe` — NSIS installer, **≈ 4.4 MB** (recommended)
-- `SVCode_x.y.z_x64_en-US.msi` — MSI package, **≈ 5.5 MB**
+- `SVCode_x.y.z_x64_en-US.msi` — MSI package, **≈ 5.8 MB** (the engine is embedded twice: once for
+  the app folder, once for the service directory)
 
 Requires Windows 10 or later (renders with the bundled WebView2).
 
-The installer lets you choose: **install for all users** (UAC confirmation, any drive you like) or
-**current user only** (no admin needed). Both modes let you pick the install directory, and
-upgrades go back to the same location automatically.
+The installer installs **for all users** (UAC confirmation) and upgrades go back to the same
+location automatically. There is no "current user only" mode: registering the search service
+requires admin rights.
 
-> The WFSearch engine ships inside the installer — search works out of the box. For the best
-> no-elevation experience, install it as a Windows service once (`wfs-server.exe install`).
+> Whole-disk search works out of the box — the installer registers the bundled WFSearch engine as
+> a Windows service, so SVCode never needs to be elevated.
 
 ## Build from source
 

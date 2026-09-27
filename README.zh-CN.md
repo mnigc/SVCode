@@ -60,16 +60,20 @@
 搜索由自带的 [WFSearch](https://github.com/mnigc/WFSearch) 引擎提供 —— 直读 NTFS 的
 MFT + USN 日志建索引，百万级文件全量索引约 2 秒，增量实时跟进：
 
-- 安装包内置 `wfs-server`，SVCode 首次搜索时自动拉起；退出时引擎随之优雅关闭
-- 若本机已把 WFSearch 装成 Windows 服务（`wfs-server install`），SVCode 直接复用，无需管理员权限
+- 安装程序会把内置的 `wfs-server` 注册成 Windows 服务（LocalSystem、开机自启），SVCode 因此全程
+  无需提权即可搜全盘
+- 服务跑的是 `%ProgramFiles%\WFSearch\wfs-server.exe` 这份副本，刻意放在 SVCode 安装目录之外：
+  服务运行期间会锁住自己的 exe，指向安装目录会让每次升级都撞文件占用
+- 本机若已有独立安装的 WFSearch 服务，安装程序不碰它（卸载时也不删），SVCode 直接复用
+- 端口空闲时 SVCode 仍会拉起安装目录里的 sidecar 兜底，但那条路只有以管理员身份运行才能建索引
 - SVCode 走引擎的回环 HTTP 网关，并用引擎启动时发布的 token（`%ProgramData%\WFSearch\http.token`）
   鉴权，因此两侧都需 **引擎 0.1.0 或更新**
 - 打进安装包的引擎版本锁在 `scripts/fetch-wfs.mjs`；每日巡检上游发布并自动提「升锁版本」的 PR
   （`scripts/check-wfs.mjs`），合并后下一次打包才用新版
 - 查询语法：空格分词 AND、`*`/`?` 通配、含 `\` 的词按全路径匹配（点文件夹「在其中搜索」即靠它）
 
-> 注意：直接读 MFT 需要管理员权限。普通权限运行 SVCode 时，建议一次性安装 WFSearch
-> 服务（管理员 PowerShell 执行 `wfs-server.exe install`），之后 SVCode 免提权即可搜索全盘。
+> 直接读 MFT 是管理员级操作，所以引擎跑在服务里。若某个盘被报为索引失败，执行
+> `"%ProgramFiles%\WFSearch\wfs-server.exe" doctor`，它会逐个 ioctl 探测并打印在哪一步被拒。
 
 ### 🌏 其他
 - 深色 / 亮色 / 跟随系统主题；中英双语界面
@@ -83,16 +87,16 @@ MFT + USN 日志建索引，百万级文件全量索引约 2 秒，增量实时�
 整个编辑器（含内置全盘搜索引擎）打包后只有几兆：
 
 - `SVCode_x.y.z_x64-setup.exe` — NSIS 安装程序，**约 4.4 MB**（推荐）
-- `SVCode_x.y.z_x64_en-US.msi` — MSI 安装包，**约 5.5 MB**
+- `SVCode_x.y.z_x64_en-US.msi` — MSI 安装包，**约 5.8 MB**（引擎被打进去两份：一份给应用目录，
+  一份给服务目录）
 
 要求：Windows 10 及以上（自带 WebView2 渲染）。
 
-安装程序启动时会让你选择安装方式：**为所有用户安装**（需管理员确认，可安装到任意磁盘）
-或**仅为当前用户安装**（免管理员）。两种方式都可自选安装目录，升级时自动记住上次的
-安装位置原位升级。
+安装程序**只为所有用户安装**（需管理员确认），升级时自动记住上次的安装位置原位升级。没有
+「仅为当前用户安装」这一档：把搜索引擎注册成 Windows 服务必须要管理员权限。
 
-> 搜索引擎 WFSearch 已随安装包内置，开箱即用；追求免提权的最佳体验，可先把
-> `wfs-server.exe install` 装成 Windows 服务。
+> 搜索引擎 WFSearch 已随安装包内置，并在安装时注册为 Windows 服务，装完直接能搜全盘，
+> SVCode 本身无需提权运行。
 
 ## 从源码构建
 

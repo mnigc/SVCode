@@ -147,8 +147,8 @@ const dict = {
   'search.indexing': { zh: '正在建索引：{n} 个文件…', en: 'Building index: {n} files…' },
   'search.notReady': { zh: 'WFSearch 引擎未就绪', en: 'WFSearch engine not ready' },
   'search.notReadyHint': {
-    zh: 'SVCode 会自动拉起内置的 WFSearch 引擎；全盘索引需要管理员权限，若长期未就绪请以管理员身份运行，或预先将 WFSearch 安装为 Windows 服务',
-    en: 'SVCode starts the bundled WFSearch engine automatically. Whole-disk indexing needs Administrator rights: run SVCode elevated, or install WFSearch as a Windows service.',
+    zh: 'SVCode 通过安装时注册好的 WFSearch 服务搜索全盘。长期未就绪通常是该服务被停用，或端口上是一个不支持鉴权的老引擎；可在管理员终端执行 net start WFSearch 后重试',
+    en: 'SVCode searches the whole disk through the WFSearch service registered at install time. If it stays unavailable, the service is probably stopped or an older engine owns the port — run `net start WFSearch` from an elevated terminal.',
   },
   'search.noMatches': { zh: '没有匹配的文件', en: 'No matching files' },
   'search.typeToSearch': { zh: '输入文件名开始搜索', en: 'Type a file name to search' },

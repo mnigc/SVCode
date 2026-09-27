@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MSI counterpart to wfs-service.nsh: registers the bundled WFSearch engine as
+  a Windows service so whole-disk search works without elevating SVCode. See
+  that file for why the service runs from %ProgramFiles%\WFSearch instead of
+  the app folder. The MSI package is already InstallScope="perMachine", so the
+  service is installed with full rights.
+
+  Referenced from tauri.conf.json via bundle.windows.wix.fragmentPaths +
+  componentGroupRefs. `ProgramFiles64Folder` matches the id Tauri's own
+  template declares for x64/arm64 builds.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="ProgramFiles64Folder">
+      <Directory Id="WFSEARCHFOLDER" Name="WFSearch" />
+    </DirectoryRef>
+
+    <ComponentGroup Id="WfsServiceGroup" Directory="WFSEARCHFOLDER">
+      <Component Id="WfsService" Guid="{9C0F4123-A497-493D-B61E-E0C4C7CAB8A5}" Win64="yes">
+        <File
+          Id="WfsServiceExe"
+          Source="$(sys.SOURCEFILEDIR)binaries\wfs-server-x86_64-pc-windows-msvc.exe"
+          Name="wfs-server.exe"
+          KeyPath="yes" />
+        <ServiceInstall
+          Id="WfsServiceInstall"
+          Name="WFSearch"
+          DisplayName="WFSearch File Name Index"
+          Description="Indexes NTFS file names for SVCode's whole-disk search. Reading the MFT requires LocalSystem rights."
+          Type="ownProcess"
+          Account="LocalSystem"
+          Start="auto"
+          ErrorControl="ignore"
+          Arguments="run" />
+        <ServiceControl
+          Id="WfsServiceControl"
+          Name="WFSearch"
+          Stop="both"
+          Start="install"
+          Remove="uninstall"
+          Wait="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>
