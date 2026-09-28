@@ -36,6 +36,12 @@ edit.**
 - When you need completion, LSP or plugins, use a full IDE — SVCode only does **open fast, view
   fast, fix fast**
 
+## Screenshots
+
+| Light theme, whole-disk tree on launch | Markdown editing beside its live preview, with a whole-disk search run |
+| --- | --- |
+| ![SVCode welcome screen: file tree of all drives, keyboard hints](docs/images/welcome-light.png) | ![SVCode dark theme: CodeMirror editor and rendered Markdown side by side, search results in the sidebar](docs/images/search-preview-dark.png) |
+
 ## Features
 
 ### 🗂 Whole-disk file tree + multi-tab editing

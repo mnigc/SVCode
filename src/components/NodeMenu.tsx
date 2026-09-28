@@ -42,6 +42,25 @@ export function openExternal(path: string) {
 }
 
 /**
+ * Delete with the same confirmation the context menu shows. Shared with the
+ * tree's Delete key so both paths ask before touching the disk.
+ */
+export async function confirmDeleteNode(path: string, isDir: boolean, loadedChildren = 0) {
+  const ws = useWorkspace.getState()
+  const name = basename(path)
+  const detail = isDir && loadedChildren > 0 ? t('tree.deleteDetail') : ''
+  const ok = await import('@tauri-apps/plugin-dialog').then((m) =>
+    m.ask(t('tree.confirmDelete', { name, detail }), {
+      title: 'SVCode',
+      kind: 'warning',
+      okLabel: t('tree.delete'),
+      cancelLabel: t('dialog.cancel'),
+    }),
+  )
+  if (ok) void ws.removeNode(path)
+}
+
+/**
  * Context menu for one file-system node, rendered fixed at the cursor. Used
  * by the file tree AND the tab strip (right-click a tab = operate on its
  * file, same menu). The node may be absent from the tree (a tab opened via
@@ -116,19 +135,8 @@ export function NodeMenu({
     </button>
   )
 
-  const del = async () => {
-    const detail =
-      node.isDir && (stored?.children?.length ?? 0) > 0 ? t('tree.deleteDetail') : ''
-    const ok = await import('@tauri-apps/plugin-dialog').then((m) =>
-      m.ask(t('tree.confirmDelete', { name: node.name, detail }), {
-        title: 'SVCode',
-        kind: 'warning',
-        okLabel: t('tree.delete'),
-        cancelLabel: t('dialog.cancel'),
-      }),
-    )
-    if (ok) void ws.removeNode(path)
-  }
+  const del = () =>
+    void confirmDeleteNode(path, node.isDir, stored?.children?.length ?? 0)
 
   const terminal = () => {
     useWorkspace.setState({ selectedDir: isDir ? path : dirname(path) })
@@ -198,19 +206,28 @@ export function NodeMenu({
   // Copying a whole drive is not a real workflow, and pinning one to Quick
   // Access just renders a useless empty entry — drop both for drive roots.
   if (!isDriveRoot) {
-    items.push(item(t('tree.copy'), () => ws.setClipboard('copy', path), { disabled: denied || missing }))
+    items.push(
+      item(t('tree.copy'), () => ws.setClipboard('copy', path), {
+        disabled: denied || missing,
+        hint: 'Ctrl+C',
+      }),
+    )
   }
   items.push(
-    item(t('tree.cut'), () => ws.setClipboard('cut', path), { disabled: !canMutate }),
+    item(t('tree.cut'), () => ws.setClipboard('cut', path), {
+      disabled: !canMutate,
+      hint: 'Ctrl+X',
+    }),
     item(t('tree.paste'), () => void ws.pasteInto(path), {
       disabled: !isDir || denied || !clipboard,
-      hint: clipboard ? undefined : t('tree.clipboardEmpty'),
+      hint: clipboard ? 'Ctrl+V' : t('tree.clipboardEmpty'),
     }),
     <div className="menu-sep" key="s2" />,
     item(t('tree.rename'), () => startRename(), {
       disabled: !canMutate,
+      hint: 'F2',
     }),
-    item(t('tree.delete'), () => void del(), { disabled: !canMutate }),
+    item(t('tree.delete'), () => del(), { disabled: !canMutate, hint: 'Del' }),
   )
   if (isDir) {
     items.push(

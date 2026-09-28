@@ -110,9 +110,10 @@ interface WorkspaceState {
   nodes: Record<string, NodeInfo>
   /** Folder the terminal button and status bar point at. */
   selectedDir: string | null
-  /** Whether the last tree pick was a folder (vs an opened/focused file) —
-   * decides whether the status bar shows selectedDir or the active file. */
-  selectedIsDir: boolean
+  /** Tree row the user picked last — file or folder. Drives the row's
+   * selection background, so the highlight always sits on what was clicked
+   * rather than on a file's parent folder. */
+  selectedPath: string | null
   notice: string | null
   /** Drive listing in flight (loadSystemTree is the only writer). */
   rootLoading: boolean
@@ -245,7 +246,7 @@ export function hasPreview(path: string): boolean {
 }
 
 /** Prefix matching every node/tab path inside `path` (itself included). */
-function subTreePrefix(path: string): string {
+export function subTreePrefix(path: string): string {
   return /[/\\]$/.test(path) ? path : path + (path.includes('\\') ? '\\' : '/')
 }
 
@@ -468,7 +469,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     set((s) => ({
       activeGroup: group,
       groupActive: { ...s.groupActive, [group]: path },
-      selectedIsDir: false,
+      selectedPath: path,
     }))
 
   /**
@@ -489,6 +490,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           moved[nk] = { ...nodes[k], path: nk }
           delete nodes[k]
         }
+      }
+      // Children lists hold raw paths too: a moved folder whose listing still
+      // points at the pre-move locations renders as empty (every child row
+      // resolves to a node that no longer exists), even though Explorer shows
+      // the files fine.
+      const to = (p: string) =>
+        p === path ? newPath : p.startsWith(prefix) ? newPath + p.slice(path.length) : p
+      for (const k of Object.keys(moved)) {
+        const n = moved[k]
+        if (n.children) moved[k] = { ...n, children: n.children.map(to) }
       }
       const tabs = s.tabs.map((t) =>
         t.path === path
@@ -515,7 +526,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           delete zoom[k]
         }
       }
-      return { nodes: { ...nodes, ...moved }, tabs, groupActive, zoom }
+      return {
+        nodes: { ...nodes, ...moved },
+        tabs,
+        groupActive,
+        zoom,
+        selectedPath: s.selectedPath ? to(s.selectedPath) : s.selectedPath,
+        selectedDir: s.selectedDir ? to(s.selectedDir) : s.selectedDir,
+      }
     })
 
   /**
@@ -551,7 +569,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
   return {
     nodes: {},
     selectedDir: null,
-    selectedIsDir: false,
+    selectedPath: null,
     notice: null,
     rootLoading: false,
     rootError: null,
@@ -659,7 +677,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     toggleNode: async (path) => {
       const current = get().nodes[path]
       if (!current) return
-      set({ selectedDir: path === THIS_PC ? null : path, selectedIsDir: true, notice: null })
+      set({ selectedDir: path === THIS_PC ? null : path, selectedPath: path, notice: null })
 
       if (current.expanded) {
         patch(path, { expanded: false })
@@ -700,7 +718,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     const group = opened ? opened.group : get().activeGroup
     set({
       selectedDir: dirname(path),
-      selectedIsDir: false,
+      selectedPath: path,
       notice: null,
     })
     if (opened) {
@@ -721,7 +739,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     if (opened) {
       set({
         selectedDir: dirname(path),
-        selectedIsDir: false,
+        selectedPath: path,
         notice: null,
       })
       focusTab(path, opened.group)
@@ -745,7 +763,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       groupView: { ...s.groupView, [id]: useSettings.getState().defaultView },
       activeGroup: id,
       selectedDir: dirname(path),
-      selectedIsDir: false,
+      selectedPath: path,
       notice: null,
     })
     void fetchTimes(path)
@@ -852,7 +870,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       // Expand the ancestor chain (stubbing never-listed levels — a file
       // opened via search can live in an unopened drive), select the parent,
       // and expand the target itself when it is a folder. Never collapses.
-      set({ selectedDir: dirname(path), notice: null })
+      set({ selectedDir: dirname(path), selectedPath: path, notice: null })
       await expandRevealChain(get, set, ancestorChain(path))
       const target = get().nodes[path]
       if (
@@ -867,7 +885,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     revealPinned: async (path) => {
       // Quick Access reveal: same expand-only walk, but the pinned folder
       // itself is the target (chain includes it) and it owns the selection.
-      set({ selectedDir: path, notice: null })
+      set({ selectedDir: path, selectedPath: path, notice: null })
       await expandRevealChain(get, set, ancestorChain(path))
       const target = get().nodes[path]
       if (!target) return
@@ -1042,14 +1060,20 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       if (dirty.length > 0 && !(await confirmDiscard(dirty.length))) return
       try {
         await invoke('delete_path', { path, recursive: true })
+        // A selection pointing at (or inside) what just went must go with it,
+        // or the status bar keeps showing a path that no longer exists.
         set((s) => {
           const nodes = { ...s.nodes }
           for (const k of Object.keys(nodes)) {
             if (k === path || k.startsWith(prefix)) delete nodes[k]
           }
+          const selection =
+            s.selectedPath === path || (s.selectedPath ?? '').startsWith(prefix)
+              ? { selectedPath: null }
+              : {}
           // Open tabs on deleted paths are dropped (guarded above); dropTabs
           // rebalances per-group actives and removes emptied groups.
-          return { nodes, ...dropTabs(s, (t) => t.path === path || t.path.startsWith(prefix)) }
+          return { nodes, ...selection, ...dropTabs(s, (t) => t.path === path || t.path.startsWith(prefix)) }
         })
         const parent = dirname(path)
         if (parent && get().nodes[parent]) await get().reloadDir(parent)

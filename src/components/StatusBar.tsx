@@ -35,16 +35,16 @@ function formatDateTime(ms: number): string {
 export function StatusBar() {
   const t = useT()
   const selectedDir = useWorkspace((s) => s.selectedDir)
-  const selectedIsDir = useWorkspace((s) => s.selectedIsDir)
+  const selectedPath = useWorkspace((s) => s.selectedPath)
   const activePath = useWorkspace((s) => s.groupActive[s.activeGroup] ?? null)
   const notice = useWorkspace((s) => s.notice)
   const dismissNotice = useWorkspace((s) => s.dismissNotice)
   const tabCount = useWorkspace((s) => s.tabs.length)
 
-  // The tree pick the user made last wins: a clicked folder shows itself,
-  // an opened/focused file shows its full path. With no folder picked the
-  // active file leads; 此电脑 remains the empty-workspace fallback.
-  const shownPath = (selectedIsDir && selectedDir) || activePath || selectedDir
+  // The tree pick the user made last wins, file or folder alike; with nothing
+  // picked the active file leads and 此电脑 remains the empty-workspace
+  // fallback.
+  const shownPath = selectedPath || activePath || selectedDir
 
   return (
     <footer className="statusbar">

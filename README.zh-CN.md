@@ -33,6 +33,12 @@
 - 不选工作区、不扫文件夹：启动即见**整个磁盘**的文件树
 - 需要补全、LSP、插件系统时，请用完整 IDE；SVCode 只做「快开、快看、快改」
 
+## 界面预览
+
+| 浅色主题，启动即见全盘文件树 | 深色主题，Markdown 编辑与实时预览并排，侧栏是全盘搜索结果 |
+| --- | --- |
+| ![SVCode 欢迎界面：全盘文件树与快捷键提示](docs/images/welcome-light.png) | ![SVCode 深色界面：CodeMirror 编辑器与渲染后的 Markdown 并排](docs/images/search-preview-dark.png) |
+
 ## 功能一览
 
 ### 🗂 全盘文件树 + 多标签编辑
