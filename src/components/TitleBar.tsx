@@ -17,6 +17,8 @@ interface MenuEntry {
   separator?: boolean
   disabled?: boolean
   checked?: boolean
+  /** Red dot: something new behind this item (e.g. an update is waiting). */
+  dot?: boolean
   onSelect?: () => void
 }
 
@@ -42,6 +44,7 @@ export function TitleBar() {
   // The startup check leaves this set when a signed newer build exists: the
   // menu item shows the version, so nothing interrupts the user outright.
   const updateVersion = useUpdate((s) => (s.phase === 'available' ? s.update?.version : undefined))
+  const hasUpdate = updateVersion !== undefined
 
   // Global shortcuts: Ctrl+, opens Settings (works even when the editor has
   // focus — it's a key the editor never uses); Ctrl+R / F5 are taken over
@@ -168,6 +171,7 @@ export function TitleBar() {
       {
         label: t('menu.checkUpdate'),
         hint: updateVersion,
+        dot: hasUpdate,
         onSelect: () => {
           setAboutOpen(true)
           setCheckSeq((seq) => seq + 1)
@@ -203,6 +207,7 @@ export function TitleBar() {
             onClick={() => setOpenMenu(openMenu === name ? null : name)}
           >
             {name}
+            {hasUpdate && name === t('menu.help') && <span className="menu-dot" aria-hidden />}
           </button>
           {openMenu === name && (
             <div className="menu-panel" role="menu">
@@ -229,6 +234,7 @@ export function TitleBar() {
                       </span>
                     )}
                     <span className="menu-label">{entry.label}</span>
+                    {entry.dot && <span className="menu-dot" aria-hidden />}
                     {entry.hint && <span className="menu-hint">{entry.hint}</span>}
                   </button>
                 ),

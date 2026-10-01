@@ -89,10 +89,26 @@
 }
 
 .topbar-menu-btn {
+  position: relative;
   padding: 4px 10px;
   border-radius: 6px;
   font-size: 12.5px;
   color: var(--fg-dim);
+}
+
+/* Red dot on 帮助 / 检查更新 while an update sits uninstalled. */
+.menu-dot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.topbar-menu-btn .menu-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
 }
 
 .topbar-menu-btn:hover,
