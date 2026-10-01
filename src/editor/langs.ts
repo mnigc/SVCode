@@ -1,5 +1,6 @@
 import type { Extension } from '@codemirror/state'
 import { StreamLanguage } from '@codemirror/language'
+import { completionExtras } from './completions'
 
 // Legacy (CodeMirror 5 port) grammars for languages without a native CM6
 // package — good-enough highlighting at zero runtime cost. One shared
@@ -57,7 +58,8 @@ const LEGACY: Record<string, Extension> = {
   cmake: StreamLanguage.define(cmake as never),
 }
 
-const ext = (path: string): string => {
+/** Lowercased file extension of a path ('' for extension-less names). */
+export const ext = (path: string): string => {
   const base = path.replace(/\\/g, '/').split('/').pop() ?? ''
   const i = base.lastIndexOf('.')
   if (i <= 0) return base.startsWith('.') ? base.slice(1).toLowerCase() : ''
@@ -78,11 +80,32 @@ const jsLoader = () => import('@codemirror/lang-javascript').then((m) => m.javas
 const tsLoader = () => import('@codemirror/lang-javascript').then((m) => m.javascript({ typescript: true }))
 const tsxLoader = () => import('@codemirror/lang-javascript').then((m) => m.javascript({ typescript: true, jsx: true }))
 const cppLoader = () => import('@codemirror/lang-cpp').then((m) => m.cpp())
+// autoCloseTags is deliberately OFF: its inputHandler inserts the closing tag
+// beyond the typed character on every '>', and that extra DOM mutation
+// desyncs WebView2's input anchor in HTML files — the caret then jumps to the
+// document start on the next Enter/keystroke (repro'd in the real app
+// 2026-10-01, never in Chromium; html-only per user report — auto-close was
+// the only html-specific DOM-mutating input path, so it's the prime suspect).
+// Closing tags stay available via the language's `</` completion source.
 const htmlLoader = () => import('@codemirror/lang-html').then((m) => m.html())
+const vueLoader = () =>
+  Promise.all([import('@codemirror/lang-vue'), import('@codemirror/lang-html')]).then(
+    ([vue, html]) => vue.vue({ base: html.html() }),
+  )
 const cssLoader = () => import('@codemirror/lang-css').then((m) => m.css())
 const sassLoader = () => import('@codemirror/lang-sass').then((m) => m.sass())
 const jsonLoader = () => import('@codemirror/lang-json').then((m) => m.json())
-const mdLoader = () => import('@codemirror/lang-markdown').then((m) => m.markdown())
+const mdLoader = () =>
+  Promise.all([
+    import('@codemirror/lang-markdown'),
+    import('@lezer/markdown'),
+    import('@codemirror/language-data'),
+  ]).then(([md, lezerMd, langData]) =>
+    // GFM: table/strikethrough/autolink/tasklist syntax highlighting; the
+    // parser config accepts it as a plain MarkdownExtension. codeLanguages
+    // gives fenced ``` blocks their own grammar (lazy-loaded per language).
+    md.markdown({ extensions: [lezerMd.GFM], codeLanguages: langData.languages }),
+  )
 const yamlLoader = () => import('@codemirror/lang-yaml').then((m) => m.yaml())
 
 const NATIVE: Record<string, () => Promise<Extension>> = {
@@ -103,7 +126,7 @@ const NATIVE: Record<string, () => Promise<Extension>> = {
   java: () => import('@codemirror/lang-java').then((m) => m.java()),
   go: () => import('@codemirror/lang-go').then((m) => m.go()),
   php: () => import('@codemirror/lang-php').then((m) => m.php()),
-  vue: () => import('@codemirror/lang-vue').then((m) => m.vue()),
+  vue: vueLoader,
   html: htmlLoader,
   htm: htmlLoader,
   svg: htmlLoader,
@@ -131,19 +154,27 @@ const resolved = new Map<string, Promise<Extension>>()
 
 /** Load the language extension for a file path. Native packages are
  * dynamically imported once per language; legacy grammars and unknown types
- * resolve immediately. */
-export function loadLanguage(path: string): Promise<Extension | []> {
+ * resolve immediately. Completion extras (keywords/snippets/word fallback)
+ * ride along so they always match the active language. */
+export function loadLanguage(path: string): Promise<Extension> {
   const e = ext(path)
   const loader = NATIVE[e]
   if (!loader) {
     const base = (path.replace(/\\/g, '/').split('/').pop() ?? '').toLowerCase()
     const byBase = BY_BASENAME[base]
-    if (byBase) return Promise.resolve(byBase())
-    return Promise.resolve(LEGACY[e] ?? [])
+    const parts: Extension[] = []
+    if (byBase) {
+      parts.push(byBase())
+      parts.push(completionExtras(base === 'cmakelists.txt' ? 'cmake' : 'dockerfile'))
+    } else {
+      if (LEGACY[e]) parts.push(LEGACY[e])
+      parts.push(completionExtras(e))
+    }
+    return Promise.resolve(parts)
   }
   let p = resolved.get(e)
   if (!p) {
-    p = loader()
+    p = loader().then((language) => [language, completionExtras(e)])
     resolved.set(e, p)
   }
   return p

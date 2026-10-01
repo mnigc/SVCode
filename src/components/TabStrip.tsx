@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { useWorkspace } from '../store/workspace'
 import { useT } from '../lib/i18n'
 import { revealInTree } from '../lib/reveal'
@@ -8,9 +8,18 @@ import { NodeIcon } from './NodeIcon'
 import { NodeMenu } from './NodeMenu'
 
 /**
+ * Payload of the tab currently being HTML5-dragged. Module scope on purpose:
+ * every group's TabStrip must see it, and `dataTransfer` is unreadable while
+ * a dragover is in flight.
+ */
+let dragPayload: { path: string; fromGroup: number } | null = null
+
+/**
  * Tab bar of ONE editor group. Shows that group's tabs and per-group close
  * actions; the split button opens a menu to spawn an empty group to the
- * left/right of, or a new row above/below, this group.
+ * left/right of, or a new row above/below, this group. Tabs drag: reorder
+ * within the strip, or drop onto another group's strip to move between
+ * groups (the caret line marks the insertion gap).
  */
 export function TabStrip({ groupId }: { groupId: number }) {
   const tr = useT()
@@ -23,6 +32,7 @@ export function TabStrip({ groupId }: { groupId: number }) {
   const closeRight = useWorkspace((s) => s.closeRight)
   const closeGroup = useWorkspace((s) => s.closeGroup)
   const splitEditor = useWorkspace((s) => s.splitEditor)
+  const moveTab = useWorkspace((s) => s.moveTab)
 
   // Tabs of this group only (the store keeps them flat).
   const groupTabs = tabs.filter((t) => t.group === groupId)
@@ -33,6 +43,58 @@ export function TabStrip({ groupId }: { groupId: number }) {
   const [splitOpen, setSplitOpen] = useState(false)
   const splitRef = useRef<HTMLDivElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
+  // Tab-drag state: which of this strip's tabs is being dragged (dims it),
+  // and where a hovered drop would land (insertion index among this group's
+  // tabs excluding the dragged one — matches store.moveTab's indexing).
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [dropAt, setDropAt] = useState<number | null>(null)
+  const hasCaret = dropAt !== null
+
+  // The caret renders in whichever strip the pointer hovers; a drag that ends
+  // elsewhere (Esc, drop into another group) must clear it here too.
+  useEffect(() => {
+    if (!hasCaret) return
+    const clear = () => setDropAt(null)
+    window.addEventListener('dragend', clear)
+    window.addEventListener('drop', clear)
+    return () => {
+      window.removeEventListener('dragend', clear)
+      window.removeEventListener('drop', clear)
+    }
+  }, [hasCaret])
+
+  /** Insertion index for a drop at `clientX`, counted over this group's tabs
+   * excluding the dragged one, from the rendered tabs' midpoints. */
+  const insertionIndex = (clientX: number, payloadPath: string): number => {
+    const el = scroller.current
+    if (!el) return 0
+    const others = groupTabs.filter((t) => t.path !== payloadPath)
+    for (let i = 0; i < others.length; i++) {
+      const tab = el.querySelector(`.tab[data-path="${CSS.escape(others[i].path)}"]`)
+      if (!tab) continue
+      const r = tab.getBoundingClientRect()
+      if (clientX < r.left + r.width / 2) return i
+    }
+    return others.length
+  }
+
+  const onStripDragOver = (e: ReactDragEvent) => {
+    if (!dragPayload) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const idx = insertionIndex(e.clientX, dragPayload.path)
+    setDropAt((prev) => (prev === idx ? prev : idx))
+  }
+
+  const onStripDrop = (e: ReactDragEvent) => {
+    const payload = dragPayload
+    dragPayload = null
+    setDropAt(null)
+    if (!payload) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    moveTab(payload.path, groupId, insertionIndex(e.clientX, payload.path))
+  }
 
   // Context menu dismissal — same pattern as the file tree's TreeMenu.
   useEffect(() => {
@@ -205,47 +267,81 @@ export function TabStrip({ groupId }: { groupId: number }) {
           const el = scroller.current
           if (el) el.scrollLeft += e.deltaY + e.deltaX
         }}
+        onDragOver={onStripDragOver}
+        onDrop={onStripDrop}
       >
-        {groupTabs.map((t) => (
-          <div
-            key={t.path}
-            role="tab"
-            aria-selected={t.path === activePath}
-            className={`tab${t.path === activePath ? ' is-active' : ''}`}
-            title={t.path}
-            onClick={() => {
-              activate(t.path)
-              // Locate the file in the tree as well: expand its ancestor
-              // chain (expand-only) and scroll the row into view. Expand-only
-              // means re-clicking a tab never folds the tree back up.
-              void revealInTree(t.path)
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              setMenu({ x: e.clientX, y: e.clientY, path: t.path })
-            }}
-            onMouseDown={(e) => {
-              if (e.button === 1) {
+        {(() => {
+          // Caret placement: the drop would land before others[dropAt], or
+          // after the last remaining tab for an append.
+          const others = dragging ? groupTabs.filter((t) => t.path !== dragging) : groupTabs
+          const caretBefore =
+            dropAt !== null && dropAt < others.length ? others[dropAt].path : null
+          const caretAfter =
+            dropAt !== null && dropAt >= others.length && others.length > 0
+              ? others[others.length - 1].path
+              : null
+          return groupTabs.map((t) => (
+            <div
+              key={t.path}
+              role="tab"
+              aria-selected={t.path === activePath}
+              data-path={t.path}
+              draggable
+              className={[
+                'tab',
+                t.path === activePath ? 'is-active' : '',
+                t.path === dragging ? 'is-dragging' : '',
+                t.path === caretBefore ? 'is-drop-before' : '',
+                t.path === caretAfter ? 'is-drop-after' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              title={t.path}
+              onClick={() => {
+                activate(t.path)
+                // Locate the file in the tree as well: expand its ancestor
+                // chain (expand-only) and scroll the row into view. Expand-only
+                // means re-clicking a tab never folds the tree back up.
+                void revealInTree(t.path)
+              }}
+              onContextMenu={(e) => {
                 e.preventDefault()
-                void closeTab(t.path)
-              }
-            }}
-          >
-            <NodeIcon spec={t.icon} size={14} />
-            <span className="tab-name">{t.name}</span>
-            <span className={`tab-dirty${t.dirty ? ' is-on' : ''}`}>●</span>
-            <button
-              className="tab-close"
-              title={tr('tab.close')}
-              onClick={(e) => {
-                e.stopPropagation()
-                void closeTab(t.path)
+                setMenu({ x: e.clientX, y: e.clientY, path: t.path })
+              }}
+              onMouseDown={(e) => {
+                if (e.button === 1) {
+                  e.preventDefault()
+                  void closeTab(t.path)
+                }
+              }}
+              onDragStart={(e) => {
+                dragPayload = { path: t.path, fromGroup: groupId }
+                setDragging(t.path)
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', t.path)
+              }}
+              onDragEnd={() => {
+                dragPayload = null
+                setDragging(null)
+                setDropAt(null)
               }}
             >
-              ×
-            </button>
-          </div>
-        ))}
+              <NodeIcon spec={t.icon} size={14} />
+              <span className="tab-name">{t.name}</span>
+              <span className={`tab-dirty${t.dirty ? ' is-on' : ''}`}>●</span>
+              <button
+                className="tab-close"
+                title={tr('tab.close')}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void closeTab(t.path)
+                }}
+              >
+                ×
+              </button>
+            </div>
+          ))
+        })()}
       </div>
 
       {bar && (

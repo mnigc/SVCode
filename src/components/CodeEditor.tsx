@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { EditorState, Compartment } from '@codemirror/state'
 import type { Extension } from '@codemirror/state'
 import {
@@ -18,6 +18,12 @@ import {
   historyKeymap,
   indentWithTab,
   toggleComment,
+  toggleBlockComment,
+  deleteLine,
+  copyLineDown,
+  copyLineUp,
+  moveLineUp,
+  moveLineDown,
 } from '@codemirror/commands'
 import { searchKeymap, search, openSearchPanel, highlightSelectionMatches } from '@codemirror/search'
 import {
@@ -26,13 +32,20 @@ import {
   foldKeymap,
   indentOnInput,
   indentUnit,
+  language,
 } from '@codemirror/language'
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
+import { highlightSpecialChars, placeholder } from '@codemirror/view'
 import { useWorkspace, type TabInfo } from '../store/workspace'
 import { useSettings } from '../lib/settings'
 import { svcodeTheme, svcodeHighlight } from '../editor/theme'
-import { loadLanguage } from '../editor/langs'
+import { loadLanguage, ext } from '../editor/langs'
+import { formatDocument, formatSelection } from '../editor/format'
+import { outline, toggleOutline } from '../editor/outline'
+import { colorTools } from '../editor/colorHover'
+import { indentGuides } from '../editor/indentGuides'
 import { svcodeSearchPanel } from '../editor/searchPanel'
+import { useT, t } from '../lib/i18n'
 
 /**
  * Stashed editor states per tab, so switching tabs keeps scroll position,
@@ -60,7 +73,12 @@ const lineNumComp = new Compartment()
 
 function baseExtensions(tab: TabInfo, docSync: Extension): Extension[] {
   const s = useSettings.getState()
+  const fileExt = ext(tab.path)
   return [
+    // Renders zero-width/control characters visibly — "invisible" paste
+    // damage is otherwise undiagnosable.
+    highlightSpecialChars(),
+    placeholder(t('editor.placeholder')),
     lineNumComp.of(s.lineNumbers ? lineNumbers() : []),
     highlightActiveLineGutter(),
     highlightActiveLine(),
@@ -76,7 +94,26 @@ function baseExtensions(tab: TabInfo, docSync: Extension): Extension[] {
     crosshairCursor(),
     highlightSelectionMatches(),
     search({ top: true, createPanel: svcodeSearchPanel }),
+    indentGuides,
+    // syntaxLint is deliberately OFF: the squiggle is a mark decoration that
+    // spans the error range — usually INCLUDING the caret while mid-typing an
+    // incomplete construct — so its span boundaries rebuild the caret's
+    // line-DOM on every keystroke. That desyncs WebView2's input anchor and
+    // the next Enter/keystroke drops the caret at the document start
+    // (repro'd in the real app across file types 2026-10-01; never in
+    // Chromium, where the same build is cursor-correct). Re-enable only with
+    // a caret-adjacent-DOM-free presentation (e.g. gutter-only diagnostics).
+    outline(fileExt),
+    ...colorTools(fileExt),
     EditorState.allowMultipleSelections.of(true),
+    // Translates CM's own UI strings (lint panel etc.) — created per state,
+    // so a mid-session language switch lands on the next opened tab (same
+    // creation-time compromise as the search panel).
+    EditorState.phrases.of({
+      Diagnostics: t('lint.diagnostics'),
+      'No diagnostics': t('lint.none'),
+      close: t('dialog.close'),
+    }),
     svcodeTheme,
     svcodeHighlight,
     tabSizeComp.of([EditorState.tabSize.of(s.tabSize), indentUnit.of(' '.repeat(s.tabSize))]),
@@ -91,6 +128,14 @@ function baseExtensions(tab: TabInfo, docSync: Extension): Extension[] {
     keymap.of([
       { key: 'Mod-s', preventDefault: true, run: () => (void useWorkspace.getState().saveActive(), true) },
       { key: 'Mod-/', preventDefault: true, run: toggleComment },
+      { key: 'Shift-Alt-a', preventDefault: true, run: toggleBlockComment },
+      { key: 'Shift-Alt-f', preventDefault: true, run: (v) => formatDocument(v, tab.path) },
+      { key: 'Mod-Shift-o', preventDefault: true, run: toggleOutline },
+      { key: 'Mod-Shift-k', preventDefault: true, run: deleteLine },
+      { key: 'Alt-ArrowUp', preventDefault: true, run: moveLineUp },
+      { key: 'Alt-ArrowDown', preventDefault: true, run: moveLineDown },
+      { key: 'Shift-Alt-ArrowUp', preventDefault: true, run: copyLineUp },
+      { key: 'Shift-Alt-ArrowDown', preventDefault: true, run: copyLineDown },
       ...closeBracketsKeymap,
       ...defaultKeymap,
       ...searchKeymap,
@@ -126,6 +171,7 @@ export function emitEditorScroll(path: string, ratio: number) {
 }
 
 export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number; active: boolean }) {
+  const t = useT()
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   const currentPath = useRef(tab.path)
@@ -136,6 +182,8 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
   const activeRef = useRef(active)
   activeRef.current = active
   const cancelLang = useRef<(() => void) | null>(null)
+  /** Editor context menu position; null while closed. */
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
   /** The text this view last loaded or pushed to the store — lets the reload
    * effect tell "my own edit echoed back" from "an external change arrived". */
   const syncedText = useRef(tab.text)
@@ -186,10 +234,18 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
     }
     window.addEventListener('svcode:find', onFind)
     window.addEventListener('svcode:replace', onFind)
+    // Same broadcast for 文件 → 格式化文档.
+    const onFormat = () => {
+      if (!activeRef.current) return
+      v.focus()
+      formatDocument(v, tabRef.current.path)
+    }
+    window.addEventListener('svcode:format', onFormat)
 
     return () => {
       window.removeEventListener('svcode:find', onFind)
       window.removeEventListener('svcode:replace', onFind)
+      window.removeEventListener('svcode:format', onFormat)
       v.scrollDOM.removeEventListener('scroll', onScroll)
       cancelLang.current?.()
       stash(currentPath.current, v.state)
@@ -210,6 +266,13 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
       const cached = stateCache.get(tab.path)
       if (cached && cached.doc.toString() === tab.text) {
         v.setState(cached)
+        // A tab switched away from before its grammar landed gets stashed
+        // language-less; without this re-load the cached state would keep
+        // the tab un-highlighted (and completion-less) forever.
+        if (!cached.facet(language)) {
+          cancelLang.current?.()
+          cancelLang.current = applyLanguage(v, tab.path)
+        }
       } else {
         stateCache.delete(tab.path)
         v.setState(
@@ -289,7 +352,64 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
     return () => window.removeEventListener('svcode:previewscroll', onPreviewScroll)
   }, [])
 
-  return <div className="code-editor" ref={host} />
+  // Dismiss the context menu on any press outside it, or Escape.
+  useEffect(() => {
+    if (!ctxMenu) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (!(e.target instanceof Element) || !e.target.closest('.editor-ctx')) setCtxMenu(null)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCtxMenu(null)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [ctxMenu])
+
+  const ctxView = ctxMenu ? view.current : null
+  const ctxSel = ctxView?.state.selection.main
+  const ctxHasSelection = !!ctxSel && !ctxSel.empty
+  return (
+    <>
+      <div
+        className="code-editor"
+        ref={host}
+        onContextMenu={(e) => {
+          // The app suppresses the native menu globally; this opens ours.
+          e.preventDefault()
+          setCtxMenu({ x: e.clientX, y: e.clientY })
+        }}
+      />
+      {ctxView && ctxMenu && (
+        <div
+          className="ctx-menu menu-panel editor-ctx"
+          role="menu"
+          style={{
+            left: Math.min(ctxMenu.x, window.innerWidth - 190),
+            top: Math.min(ctxMenu.y, window.innerHeight - 56),
+          }}
+        >
+          <button
+            className="menu-item"
+            role="menuitem"
+            disabled={ctxView.state.readOnly}
+            onClick={() => {
+              setCtxMenu(null)
+              formatSelection(ctxView, tabRef.current.path)
+            }}
+          >
+            <span className="menu-label">
+              {ctxHasSelection ? t('editor.formatSelection') : t('menu.format')}
+            </span>
+            {!ctxHasSelection && <span className="menu-hint">Shift+Alt+F</span>}
+          </button>
+        </div>
+      )}
+    </>
+  )
 }
 
 /** How long a programmatically-scrolled pane suppresses its own echo. */

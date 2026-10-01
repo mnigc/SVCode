@@ -758,6 +758,7 @@
 }
 
 .tab {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -769,6 +770,33 @@
   white-space: nowrap;
   max-width: 220px;
   transition: background 100ms;
+}
+
+/* Tab drag & drop: the dragged tab dims; a 2px accent caret marks the gap a
+   drop would land in (left edge of the next tab, right edge of the last one
+   for an append). */
+.tab.is-dragging {
+  opacity: 0.35;
+}
+
+.tab.is-drop-before::before,
+.tab.is-drop-after::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.tab.is-drop-before::before {
+  left: -3px;
+}
+
+.tab.is-drop-after::after {
+  right: -3px;
 }
 
 .tab:hover {
@@ -965,12 +993,10 @@
   overflow: hidden;
 }
 
-/* HTML preview: sandboxed iframe fills the body edge-to-edge; white like a
-   browser viewport, since unstyled HTML assumes a light background. */
+/* HTML preview: the iframe is sized and centered by the zoomable viewer wrap
+   (.viewer-img-wrap / .viewer-img), exactly like images; white like a browser
+   viewport, since unstyled HTML assumes a light background. */
 .preview-html-frame {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
   border: 0;
   background: #fff;
 }

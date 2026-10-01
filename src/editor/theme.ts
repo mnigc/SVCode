@@ -148,6 +148,137 @@ export const svcodeTheme = EditorView.theme(
       background: 'var(--bg-active)',
       color: 'var(--fg)',
     },
+    // Anchor for the out-of-flow indent-guide widgets (indentGuides.ts).
+    '.cm-line': {
+      position: 'relative',
+    },
+    '.cm-indent-guide': {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      width: '1px',
+      pointerEvents: 'none',
+      // Above the line background (active-line tint) but below the text.
+      zIndex: -1,
+      background: 'color-mix(in srgb, var(--border-strong) 70%, transparent)',
+    },
+    // CSS color-value hover swatch (colorHover.ts).
+    '.sv-color-tip': {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '7px',
+      padding: '6px 9px',
+      fontSize: '12px',
+    },
+    '.sv-color-swatch': {
+      display: 'inline-block',
+      width: '16px',
+      height: '16px',
+      borderRadius: '4px',
+      border: '1px solid var(--border-strong)',
+      flex: '0 0 auto',
+    },
+    // Inline color decorator (colorHover.ts) — sits in the text line right
+    // after the color token.
+    '.sv-color-inline': {
+      display: 'inline-block',
+      width: '0.8em',
+      height: '0.8em',
+      borderRadius: '3px',
+      border: '1px solid var(--border-strong)',
+      margin: '0 1px',
+      verticalAlign: 'baseline',
+    },
+    // Document outline bottom panel (outline.ts) — same visual family as
+    // .sv-search.
+    '.sv-outline': {
+      display: 'flex',
+      flexDirection: 'column',
+      padding: '8px 12px',
+      fontSize: '12px',
+      maxHeight: '260px',
+    },
+    '.sv-outline-row': {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+      paddingBottom: '6px',
+    },
+    '.sv-outline-field': {
+      font: 'inherit',
+      color: 'var(--fg)',
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border-strong)',
+      borderRadius: '6px',
+      padding: '4px 8px',
+      flex: 1,
+    },
+    '.sv-outline-field:focus': {
+      outline: 'none',
+      borderColor: 'var(--accent)',
+    },
+    '.sv-outline-close': {
+      border: 'none',
+      background: 'none',
+      color: 'var(--fg-faint)',
+      cursor: 'pointer',
+      fontSize: '14px',
+      padding: '2px 6px',
+    },
+    '.sv-outline-close:hover': {
+      color: 'var(--fg)',
+    },
+    '.sv-outline-list': {
+      overflowY: 'auto',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '1px',
+    },
+    '.sv-outline-item': {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      font: 'inherit',
+      color: 'var(--fg)',
+      textAlign: 'left',
+      background: 'none',
+      border: 'none',
+      borderRadius: '5px',
+      padding: '3px 8px',
+      cursor: 'pointer',
+    },
+    '.sv-outline-item:hover': {
+      background: 'var(--bg-hover)',
+    },
+    '.sv-outline-kind': {
+      flex: '0 0 18px',
+      textAlign: 'center',
+      fontSize: '11px',
+      color: 'var(--fg-faint)',
+    },
+    '.sv-outline-kind.is-function': {
+      color: 'var(--tok-fn)',
+    },
+    '.sv-outline-kind.is-class, .sv-outline-kind.is-type': {
+      color: 'var(--tok-type)',
+    },
+    '.sv-outline-kind.is-heading': {
+      color: 'var(--accent)',
+    },
+    '.sv-outline-name': {
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    },
+    '.sv-outline-line': {
+      marginLeft: 'auto',
+      color: 'var(--fg-faint)',
+      fontVariantNumeric: 'tabular-nums',
+    },
+    '.sv-outline-empty': {
+      color: 'var(--fg-faint)',
+      padding: '6px 8px',
+    },
   },
   { dark: false },
 )

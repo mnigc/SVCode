@@ -90,6 +90,12 @@ export function TitleBar() {
         onSelect: () => void useWorkspace.getState().saveActive(),
       },
       {
+        label: t('menu.format'),
+        hint: 'Shift+Alt+F',
+        // Answered by the focused group's editor, like the find broadcast.
+        onSelect: () => window.dispatchEvent(new CustomEvent('svcode:format')),
+      },
+      {
         label: t('menu.closeTab'),
         hint: 'Ctrl+W',
         onSelect: () => {

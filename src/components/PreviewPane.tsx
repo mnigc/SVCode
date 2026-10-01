@@ -101,7 +101,7 @@ export function PreviewPane({ groupId }: { groupId: number }) {
         ) : svgUrl ? (
           <SvgPreview path={tab.path} url={svgUrl} isActive={isActive} />
         ) : isHtml ? (
-          <HtmlPreview text={tab.text} />
+          <HtmlPreview text={tab.text} path={tab.path} isActive={isActive} />
         ) : (
           <UnsupportedCard tab={tab} compact />
         )}

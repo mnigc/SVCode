@@ -7,10 +7,18 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies / build output
 node_modules
 dist
 dist-ssr
 *.local
+*.tsbuildinfo
+coverage
+
+# Local env files (secrets) — the .example template stays tracked
+.env
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*
@@ -22,6 +30,24 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# OS shell junk (Windows)
+Thumbs.db
+Desktop.ini
+~$*
+
+# Merge leftovers
+*.orig
+
+# Local agent scratch (session plans, saved workflows)
+/.zcode/
+
+# UI-test scratch files (mock Tauri bridge page, sanitizer fixtures) — local only
+mock.html
+test-preview.html
+
+# Local-only material (marketing covers, drafts) — not part of the app
+xhs-covers/
 
 # UI-test sample fixtures (regenerate with scripts/gen-office-samples.mjs)
 public/uitest

@@ -218,7 +218,8 @@ export function GroupStatusBar({ groupId }: { groupId: number }) {
     tab.kind === 'image' ||
     tab.kind === 'pdf' ||
     tab.kind === 'office' ||
-    (tab.kind === 'text' && extname(tab.path) === 'svg')
+    (tab.kind === 'text' && extname(tab.path) === 'svg') ||
+    (tab.kind === 'text' && ['html', 'htm'].includes(extname(tab.path)))
 
   return (
     <div className="group-statusbar">

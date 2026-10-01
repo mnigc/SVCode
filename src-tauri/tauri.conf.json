@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "SVCode",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "identifier": "com.svcode.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -20,12 +20,17 @@
         "minHeight": 520,
         "center": true,
         "resizable": true,
-        "decorations": false
+        "decorations": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; worker-src 'self' blob:",
-      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420 http://localhost:1420; worker-src 'self' blob:"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' http://asset.localhost; img-src 'self' blob: data: https: http://asset.localhost; media-src 'self' blob: http://asset.localhost; font-src 'self' data: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost; worker-src 'self' blob:",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://asset.localhost; img-src 'self' blob: data: https: http://asset.localhost; media-src 'self' blob: http://asset.localhost; font-src 'self' data: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420 http://localhost:1420; worker-src 'self' blob:",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
     }
   },
   "plugins": {

@@ -165,6 +165,10 @@ interface WorkspaceState {
   closeAllTabs: () => Promise<void>
   closeOthers: (path: string) => Promise<void>
   closeRight: (path: string) => Promise<void>
+  /** Drag & drop: move a tab into `toGroup` before that group's `index`-th
+   * remaining tab (append when out of range) and activate it there. Same
+   * group + shifted index = reorder. */
+  moveTab: (path: string, toGroup: number, index: number) => void
   editActive: (group: number, text: string, lineCount: number) => void
   saveActive: () => Promise<void>
   dismissNotice: () => void
@@ -827,6 +831,30 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       const drop = new Set(doomed.map((t) => t.path))
       set((s) => dropTabs(s, (t) => drop.has(t.path)))
       syncTabWatches()
+    },
+
+    moveTab: (path, toGroup, index) => {
+      const s = get()
+      const tab = s.tabs.find((t) => t.path === path)
+      if (!tab || !s.rows.some((r) => r.groups.includes(toGroup))) return
+      // Remove first, then re-insert: `index` counts the target group's tabs
+      // WITHOUT the dragged one, so the caret position from the tab bar maps
+      // 1:1 no matter where the dragged tab sat.
+      const without = s.tabs.filter((t) => t.path !== path)
+      const target = without.filter((t) => t.group === toGroup)
+      const at = Math.max(0, Math.min(index, target.length))
+      const before = target[at]
+      const insertAt = before ? without.findIndex((t) => t.path === before.path) : without.length
+      without.splice(insertAt, 0, { ...tab, group: toGroup })
+      const groupActive = { ...s.groupActive }
+      if (tab.group !== toGroup && groupActive[tab.group] === path) {
+        // The dragged tab was its source group's active one: fall back to
+        // that group's last remaining tab, mirroring closeTab's rule.
+        const remaining = without.filter((t) => t.group === tab.group)
+        groupActive[tab.group] = remaining.length ? remaining[remaining.length - 1].path : null
+      }
+      set({ tabs: without, groupActive })
+      focusTab(path, toGroup)
     },
 
     editActive: (group, text, lineCount) =>
