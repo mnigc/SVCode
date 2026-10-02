@@ -6,10 +6,10 @@
 // into src-tauri/binaries/. CI runs it before `tauri build`, which fails
 // outright when the expected externalBin is missing.
 //
-// The version and hash are pinned deliberately: SVCode speaks protocol v1 to
-// the gateway and depends on the `x-wfs-token` handshake, so a silently
-// updated engine could break search in a build nobody reviewed. Upgrades are
-// manual: read the release notes at
+// The version and hash are pinned deliberately: SVCode speaks protocol v2 to
+// the gateway (content search needs it) and depends on the `x-wfs-token`
+// handshake, so a silently updated engine could break search in a build nobody
+// reviewed. Upgrades are manual: read the release notes at
 // https://github.com/mnigc/WFSearch/releases, edit the constants below, run
 // this script and re-run
 // `cargo test --lib -- wfs::tests --ignored` against a live engine.
@@ -21,9 +21,9 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const VERSION = '0.1.2'
-const SHA256 = '0cd71e1c6da609575788024e74d26694ac5a20186bade0714fc8125361d5bd16'
-const SIZE = 3478528
+const VERSION = '0.2.0'
+const SHA256 = '533bb1cb9da67512c7eb8c4cf78b5f38b2f9454e04f426fec7146e7fd8282942'
+const SIZE = 3703296
 const ASSET = 'wfs-server.exe'
 const REPO = 'mnigc/WFSearch'
 
