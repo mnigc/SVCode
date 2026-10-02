@@ -119,14 +119,22 @@ export async function installUpdate(): Promise<void> {
 }
 
 /**
- * Startup entry point: at most one check per day, and a failure stays silent —
- * a blocked network must not look like a broken app. A hit leaves the store in
- * `available`, which is what lights the menu hint.
+ * Startup entry point: at most one successful check per day, and a failure
+ * stays silent — a blocked network must not look like a broken app. A hit
+ * leaves the store in `available`, which is what lights the menu hint.
+ *
+ * The daily marker is written only after the check SUCCEEDED ('uptodate' or
+ * 'available'): a machine that boots while offline must retry on the next
+ * launch instead of staying silent for a full day — the failed attempt used
+ * to consume the whole budget, which read as "the app never checks".
  */
 export async function checkOnStartup(): Promise<void> {
   const store = await kv('update.kv')
   const last = (await store.get<number>('lastCheck')) ?? 0
   if (Date.now() - last < RECHECK_AFTER_MS) return
-  await store.set('lastCheck', Date.now())
   await checkForUpdate()
+  const phase = useUpdate.getState().phase
+  if (phase === 'uptodate' || phase === 'available') {
+    await store.set('lastCheck', Date.now())
+  }
 }
