@@ -4,6 +4,7 @@ import { useWorkspace } from '../store/workspace'
 import { useT } from '../lib/i18n'
 import { revealInTree } from '../lib/reveal'
 import { scrollIntoContainer } from '../lib/scrollIntoContainer'
+import { useDismiss } from '../lib/useDismiss'
 import { NodeIcon } from './NodeIcon'
 import { NodeMenu } from './NodeMenu'
 
@@ -13,6 +14,29 @@ import { NodeMenu } from './NodeMenu'
  * a dragover is in flight.
  */
 let dragPayload: { path: string; fromGroup: number } | null = null
+
+/**
+ * Tab rects captured once at dragstart: dragover fires per pixel and used to
+ * re-run a querySelector per tab on every event. Keyed by path so any strip
+ * (this one or a drop target in another group) reads its own tabs' rects.
+ */
+let dragRects: Map<string, DOMRect> | null = null
+
+function captureDragRects() {
+  dragRects = new Map()
+  document.querySelectorAll<HTMLElement>('.tab[data-path]').forEach((el) => {
+    dragRects!.set(el.dataset.path!, el.getBoundingClientRect())
+  })
+}
+
+/** End-of-gesture cleanup. Runs a tick late so every strip's drop handler
+ * (including drops into other groups) has read the payload. */
+function finishDrag() {
+  setTimeout(() => {
+    dragPayload = null
+    dragRects = null
+  }, 0)
+}
 
 /**
  * Tab bar of ONE editor group. Shows that group's tabs and per-group close
@@ -51,10 +75,15 @@ export function TabStrip({ groupId }: { groupId: number }) {
   const hasCaret = dropAt !== null
 
   // The caret renders in whichever strip the pointer hovers; a drag that ends
-  // elsewhere (Esc, drop into another group) must clear it here too.
+  // elsewhere (Esc, drop into another group) must clear it here too — and the
+  // shared drag payload/rects get their end-of-gesture cleanup in the same
+  // window-level events (a tab unmounting mid-drag would otherwise leak them).
   useEffect(() => {
     if (!hasCaret) return
-    const clear = () => setDropAt(null)
+    const clear = () => {
+      setDropAt(null)
+      finishDrag()
+    }
     window.addEventListener('dragend', clear)
     window.addEventListener('drop', clear)
     return () => {
@@ -64,15 +93,12 @@ export function TabStrip({ groupId }: { groupId: number }) {
   }, [hasCaret])
 
   /** Insertion index for a drop at `clientX`, counted over this group's tabs
-   * excluding the dragged one, from the rendered tabs' midpoints. */
+   * excluding the dragged one, from the rects captured at dragstart. */
   const insertionIndex = (clientX: number, payloadPath: string): number => {
-    const el = scroller.current
-    if (!el) return 0
     const others = groupTabs.filter((t) => t.path !== payloadPath)
     for (let i = 0; i < others.length; i++) {
-      const tab = el.querySelector(`.tab[data-path="${CSS.escape(others[i].path)}"]`)
-      if (!tab) continue
-      const r = tab.getBoundingClientRect()
+      const r = dragRects?.get(others[i].path)
+      if (!r) continue
       if (clientX < r.left + r.width / 2) return i
     }
     return others.length
@@ -97,38 +123,10 @@ export function TabStrip({ groupId }: { groupId: number }) {
   }
 
   // Context menu dismissal — same pattern as the file tree's TreeMenu.
-  useEffect(() => {
-    if (!menu) return
-    const onPointerDown = (e: PointerEvent) => {
-      if (!(e.target instanceof Element) || !e.target.closest('.ctx-menu')) setMenu(null)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenu(null)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [menu])
+  useDismiss(!!menu, () => setMenu(null), '.ctx-menu')
 
   // Split-direction dropdown dismissal — same pattern as the ⋯ menu below.
-  useEffect(() => {
-    if (!splitOpen) return
-    const onPointerDown = (e: PointerEvent) => {
-      if (!splitRef.current?.contains(e.target as Node)) setSplitOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSplitOpen(false)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [splitOpen])
+  useDismiss(splitOpen, () => setSplitOpen(false), splitRef)
 
   // Overlay scroll indicator: thumb size/pos in percent, null when no overflow.
   const [bar, setBar] = useState<{ w: number; l: number } | null>(null)
@@ -186,24 +184,27 @@ export function TabStrip({ groupId }: { groupId: number }) {
     if (tab) scrollIntoContainer(tab, el)
   }, [activePath, groupTabs.length])
 
-  useEffect(() => {
-    if (!moreOpen) return
-    const onPointerDown = (e: PointerEvent) => {
-      if (!moreRef.current?.contains(e.target as Node)) setMoreOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMoreOpen(false)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [moreOpen])
+  useDismiss(moreOpen, () => setMoreOpen(false), moreRef)
 
   const activeIdx = groupTabs.findIndex((t) => t.path === activePath)
   const reference = activePath ?? groupTabs[0]?.path
+
+  // Roving-tabindex tablist navigation: ←/→ move focus to the previous/next
+  // tab and activate it (simplest compliant form; the active tab carries
+  // tabIndex 0, the rest -1). No clash with middle-click close or drag.
+  const onTablistKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    if (groupTabs.length < 2) return
+    e.preventDefault()
+    const step = e.key === 'ArrowRight' ? 1 : -1
+    const next = groupTabs[(activeIdx + step + groupTabs.length) % groupTabs.length]
+    activate(next.path)
+    requestAnimationFrame(() => {
+      scroller.current
+        ?.querySelector<HTMLElement>(`.tab[data-path="${CSS.escape(next.path)}"]`)
+        ?.focus()
+    })
+  }
 
   const onBarPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     const el = scroller.current
@@ -263,6 +264,7 @@ export function TabStrip({ groupId }: { groupId: number }) {
         className="tabstrip-scroll"
         ref={scroller}
         role="tablist"
+        onKeyDown={onTablistKeyDown}
         onWheel={(e) => {
           const el = scroller.current
           if (el) el.scrollLeft += e.deltaY + e.deltaX
@@ -285,6 +287,8 @@ export function TabStrip({ groupId }: { groupId: number }) {
               key={t.path}
               role="tab"
               aria-selected={t.path === activePath}
+              // Roving tabindex: only the reference tab is in the Tab order.
+              tabIndex={t.path === reference ? 0 : -1}
               data-path={t.path}
               draggable
               className={[
@@ -316,12 +320,14 @@ export function TabStrip({ groupId }: { groupId: number }) {
               }}
               onDragStart={(e) => {
                 dragPayload = { path: t.path, fromGroup: groupId }
+                captureDragRects()
                 setDragging(t.path)
                 e.dataTransfer.effectAllowed = 'move'
                 e.dataTransfer.setData('text/plain', t.path)
               }}
               onDragEnd={() => {
                 dragPayload = null
+                dragRects = null
                 setDragging(null)
                 setDropAt(null)
               }}

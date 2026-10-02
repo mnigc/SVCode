@@ -93,6 +93,10 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!e.ctrlKey && !e.metaKey) return
+      // Someone already handled (and preventDefault-ed) this event — CM's
+      // keymap saves on Mod-s itself, then the event bubbles here; answering
+      // again wrote the file twice concurrently. Guard every branch.
+      if (e.defaultPrevented) return
       const s = useWorkspace.getState()
       const key = e.key.toLowerCase()
 
@@ -118,10 +122,10 @@ export default function App() {
         cycleTab(e.shiftKey ? -1 : 1)
       } else if (key === 'f' || key === 'h') {
         // CodeMirror's keymap already consumed it (editor body focused →
-        // panel opened) — it preventDefaults on a match. Anything else —
-        // focus elsewhere, or in the search panel's own input where CM binds
+        // panel opened) — it preventDefaults on a match, and the guard at the
+        // top already returned for that case. Anything else — focus
+        // elsewhere, or in the search panel's own input where CM binds
         // nothing — must NOT fall through to WebView2's built-in find bar.
-        if (e.defaultPrevented) return
         e.preventDefault()
         window.dispatchEvent(new CustomEvent('svcode:find'))
       } else if (key === '`' && s.selectedDir) {
@@ -298,6 +302,7 @@ function GroupSplitter({
       onPointerDown={start}
       onPointerMove={move}
       onPointerUp={end}
+      onPointerCancel={end}
       onDoubleClick={() => useWorkspace.getState().adjustGroupSplit(left, right, 1, 1)}
     />
   )
@@ -345,6 +350,7 @@ function RowSplitter({ top, bottom, mainH }: { top: number; bottom: number; main
       onPointerDown={start}
       onPointerMove={move}
       onPointerUp={end}
+      onPointerCancel={end}
       onDoubleClick={() => useWorkspace.getState().adjustRowSplit(top, bottom, 1, 1)}
     />
   )

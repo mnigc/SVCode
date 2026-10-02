@@ -16,6 +16,9 @@ export function MdPreview({ tab }: { tab: TabInfo }) {
   // scroll sync needs an element it both reads and drives reliably.
   const scroller = useRef<HTMLDivElement>(null)
   const [html, setHtml] = useState('')
+  // Echo-guard timestamp, per component instance — a module-level one would
+  // let one group's preview swallow another group's scroll echoes.
+  const ignoreScrollUntil = useRef(0)
 
   useEffect(() => {
     openExternalSafe(scroller.current!)
@@ -34,7 +37,7 @@ export function MdPreview({ tab }: { tab: TabInfo }) {
       const max = el.scrollHeight - el.clientHeight
       if (max > 0) {
         // Programmatic write: its own scroll event must not echo back.
-        ignorePreviewScrollUntil = Date.now() + ECHO_GUARD_MS
+        ignoreScrollUntil.current = Date.now() + ECHO_GUARD_MS
         el.scrollTop = ratio * max
       }
     }
@@ -53,7 +56,7 @@ export function MdPreview({ tab }: { tab: TabInfo }) {
         if (max <= 0) return
         // Skip the programmatic scroll we just wrote (echo guard), so only
         // genuine user scrolls mirror back into the editor.
-        if (Date.now() < ignorePreviewScrollUntil) return
+        if (Date.now() < ignoreScrollUntil.current) return
         window.dispatchEvent(
           new CustomEvent('svcode:previewscroll', {
             detail: { path: tab.path, ratio: el.scrollTop / max },
@@ -68,4 +71,3 @@ export function MdPreview({ tab }: { tab: TabInfo }) {
 
 /** How long a programmatically-scrolled pane suppresses its own echo. */
 const ECHO_GUARD_MS = 150
-let ignorePreviewScrollUntil = 0

@@ -149,6 +149,8 @@ export function svcodeSearchPanel(view: EditorView): Panel {
   dom.append(row1, row2)
 
   dom.addEventListener('keydown', (e) => {
+    // IME composition: Enter/Escape belong to the IME until it settles.
+    if (e.isComposing) return
     if (e.key === 'Escape') {
       e.preventDefault()
       closeSearchPanel(view)

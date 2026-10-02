@@ -49,6 +49,9 @@ export function Splitter({ side, width, onWidth }: Props) {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      // Same teardown as a clean release — without this a canceled gesture
+      // (e.g. a system gesture stealing the pointer) leaves pane-resizing on.
+      onPointerCancel={onPointerUp}
       onDoubleClick={() => onWidth(side === 'left' ? 260 : 420)}
     />
   )

@@ -38,7 +38,7 @@ import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } 
 import { highlightSpecialChars, placeholder } from '@codemirror/view'
 import { useWorkspace, type TabInfo } from '../store/workspace'
 import { useSettings } from '../lib/settings'
-import { svcodeTheme, svcodeHighlight } from '../editor/theme'
+import { makeSvcodeTheme, svcodeHighlight } from '../editor/theme'
 import { loadLanguage, ext } from '../editor/langs'
 import { formatDocument, formatSelection } from '../editor/format'
 import { outline, toggleOutline } from '../editor/outline'
@@ -46,6 +46,8 @@ import { colorTools } from '../editor/colorHover'
 import { indentGuides } from '../editor/indentGuides'
 import { svcodeSearchPanel } from '../editor/searchPanel'
 import { useT, t } from '../lib/i18n'
+import { useDismiss } from '../lib/useDismiss'
+import { MENU_EDGE_MARGIN } from '../lib/menuClamp'
 
 /**
  * Stashed editor states per tab, so switching tabs keeps scroll position,
@@ -65,11 +67,26 @@ function stash(path: string, state: EditorState) {
   }
 }
 
+/** Drop cache entries whose tab no longer exists (closed while hidden, or
+ * behind a PDF/image tab that never remounted the editor). Called from the
+ * mount and tab-switch effects, where the store is fresh anyway. */
+function pruneStateCache() {
+  const live = new Set(useWorkspace.getState().tabs.map((t) => t.path))
+  for (const p of stateCache.keys()) if (!live.has(p)) stateCache.delete(p)
+}
+
 const tabSizeComp = new Compartment()
 const wrapComp = new Compartment()
 const langComp = new Compartment()
 const readOnlyComp = new Compartment()
 const lineNumComp = new Compartment()
+const themeComp = new Compartment()
+
+/** The app theme is pinned to <html data-theme> by the settings store —
+ * read the resolved value from there (covers 'auto' for free). */
+function currentThemeDark(): boolean {
+  return document.documentElement.dataset.theme !== 'light'
+}
 
 function baseExtensions(tab: TabInfo, docSync: Extension): Extension[] {
   const s = useSettings.getState()
@@ -114,7 +131,7 @@ function baseExtensions(tab: TabInfo, docSync: Extension): Extension[] {
       'No diagnostics': t('lint.none'),
       close: t('dialog.close'),
     }),
-    svcodeTheme,
+    makeSvcodeTheme(currentThemeDark()),
     svcodeHighlight,
     tabSizeComp.of([EditorState.tabSize.of(s.tabSize), indentUnit.of(' '.repeat(s.tabSize))]),
     wrapComp.of(s.wordWrap ? EditorView.lineWrapping : []),
@@ -170,18 +187,20 @@ export function emitEditorScroll(path: string, ratio: number) {
   window.dispatchEvent(new CustomEvent('svcode:editorscroll', { detail: { path, ratio } }))
 }
 
-export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number; active: boolean }) {
+export function CodeEditor({ tab, active }: { tab: TabInfo; group: number; active: boolean }) {
   const t = useT()
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   const currentPath = useRef(tab.path)
   const tabRef = useRef(tab)
   tabRef.current = tab
-  const groupRef = useRef(group)
-  groupRef.current = group
   const activeRef = useRef(active)
   activeRef.current = active
   const cancelLang = useRef<(() => void) | null>(null)
+  /** Echo-guard timestamp for programmatic scrolls (preview → editor sync),
+   * per component instance — a module-level one would let the two editor
+   * groups swallow each other's scroll echoes. */
+  const ignoreScrollUntil = useRef(0)
   /** Editor context menu position; null while closed. */
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
   /** The text this view last loaded or pushed to the store — lets the reload
@@ -195,21 +214,34 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
       syncedText.current = text
       useWorkspace
         .getState()
-        .editActive(groupRef.current, text, update.state.doc.lines)
+        .editActive(tabRef.current.path, text)
     }),
   )
 
   // One view for the component's lifetime; states swap when the tab changes.
   useEffect(() => {
-    const v = new EditorView({
-      parent: host.current!,
-      state: EditorState.create({
-        doc: tabRef.current.text,
-        extensions: baseExtensions(tabRef.current, docSync.current),
-      }),
-    })
+    pruneStateCache()
+    // Remount (e.g. returning to this tab from a PDF/image viewer that owned
+    // the pane) must not drop undo history / cursor / scroll: restore the
+    // stashed state when it still matches the tab's text — same contract as
+    // the tab-switch effect below.
+    const cached = stateCache.get(tabRef.current.path)
+    const state =
+      cached && cached.doc.toString() === tabRef.current.text
+        ? cached
+        : EditorState.create({
+            doc: tabRef.current.text,
+            extensions: baseExtensions(tabRef.current, docSync.current),
+          })
+    const v = new EditorView({ parent: host.current!, state })
     view.current = v
-    cancelLang.current = applyLanguage(v, tabRef.current.path)
+    if (state === cached) {
+      // A tab switched away from before its grammar landed gets stashed
+      // language-less (mirrors the restore path in the switch effect).
+      if (!cached!.facet(language)) cancelLang.current = applyLanguage(v, tabRef.current.path)
+    } else {
+      cancelLang.current = applyLanguage(v, tabRef.current.path)
+    }
 
     // Scroll sync lives on scrollDOM directly: `scroll` doesn't bubble, so
     // domEventHandlers (bound below the scroller) would never see it.
@@ -221,7 +253,7 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
       if (max <= 0) return
       // Programmatic writes (preview → editor sync) land here too; re-broadcasting
       // them would bounce the position back and forth between the two panes.
-      if (Date.now() < ignoreEditorScrollUntil) return
+      if (Date.now() < ignoreScrollUntil.current) return
       emitEditorScroll(tabRef.current.path, el.scrollTop / max)
     }
     v.scrollDOM.addEventListener('scroll', onScroll, { passive: true })
@@ -260,6 +292,7 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
     const v = view.current
     if (!v) return
     if (currentPath.current !== tab.path) {
+      pruneStateCache()
       stash(currentPath.current, v.state)
       currentPath.current = tab.path
       syncedText.current = tab.text
@@ -335,6 +368,21 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
     view.current?.dispatch({ effects: wrapComp.reconfigure(wordWrap ? EditorView.lineWrapping : []) })
   }, [wordWrap])
 
+  // Dark/light flip: rebuild the CM theme extension so the base theme's
+  // defaults (selection, tooltips) match the palette. The visual change itself
+  // rides on CSS variables; this only swaps the base-theme side. Watching
+  // <html data-theme> covers all sources: the settings dialog and the OS
+  // preference flip under 'auto' (settings.ts re-applies on matchMedia).
+  useEffect(() => {
+    const mo = new MutationObserver(() => {
+      view.current?.dispatch({
+        effects: themeComp.reconfigure(makeSvcodeTheme(currentThemeDark())),
+      })
+    })
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => mo.disconnect()
+  }, [])
+
   // Markdown preview → editor scroll mirroring.
   useEffect(() => {
     const onPreviewScroll = (e: Event) => {
@@ -344,7 +392,7 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
       const max = v.scrollDOM.scrollHeight - v.scrollDOM.clientHeight
       if (max > 0) {
         // Programmatic write: its own scroll event must not echo back.
-        ignoreEditorScrollUntil = Date.now() + ECHO_GUARD_MS
+        ignoreScrollUntil.current = Date.now() + ECHO_GUARD_MS
         v.scrollDOM.scrollTop = ratio * max
       }
     }
@@ -352,22 +400,8 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
     return () => window.removeEventListener('svcode:previewscroll', onPreviewScroll)
   }, [])
 
-  // Dismiss the context menu on any press outside it, or Escape.
-  useEffect(() => {
-    if (!ctxMenu) return
-    const onPointerDown = (e: PointerEvent) => {
-      if (!(e.target instanceof Element) || !e.target.closest('.editor-ctx')) setCtxMenu(null)
-    }
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setCtxMenu(null)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [ctxMenu])
+  // Dismiss the context menu on any press outside it, or Escape (shared hook).
+  useDismiss(!!ctxMenu, () => setCtxMenu(null), '.editor-ctx')
 
   const ctxView = ctxMenu ? view.current : null
   const ctxSel = ctxView?.state.selection.main
@@ -388,7 +422,7 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
           className="ctx-menu menu-panel editor-ctx"
           role="menu"
           style={{
-            left: Math.min(ctxMenu.x, window.innerWidth - 190),
+            left: Math.min(ctxMenu.x, window.innerWidth - MENU_EDGE_MARGIN),
             top: Math.min(ctxMenu.y, window.innerHeight - 56),
           }}
         >
@@ -414,4 +448,3 @@ export function CodeEditor({ tab, group, active }: { tab: TabInfo; group: number
 
 /** How long a programmatically-scrolled pane suppresses its own echo. */
 const ECHO_GUARD_MS = 150
-let ignoreEditorScrollUntil = 0

@@ -106,9 +106,8 @@ updates after that.
 Grab the latest installer from [**Releases**](https://github.com/mnigc/SVCode/releases/latest) —
 the whole editor ships in a download of just a few megabytes:
 
-- `SVCode_x.y.z_x64-setup.exe` — NSIS installer, **≈ 4.4 MB** (recommended)
-- `SVCode_x.y.z_x64_en-US.msi` — MSI package, **≈ 5.5 MB** (the engine is embedded twice: once for
-  the app folder, once for the service directory)
+- `SVCode_x.y.z_x64-setup.exe` — NSIS installer, **≈ 4.4 MB** (the only package; it registers the
+  search service and is also what the in-app updater installs)
 
 Requires Windows 10 or later (renders with the bundled WebView2).
 
@@ -126,7 +125,7 @@ requires admin rights.
 pnpm install
 pnpm fetch:wfs     # download the pinned WFSearch sidecar into src-tauri/binaries (not committed)
 pnpm tauri dev     # development
-pnpm tauri build   # package (NSIS + MSI)
+pnpm tauri build   # package (NSIS)
 ```
 
 Pushing a `v*` tag (or triggering manually from the Actions page) builds the Windows installers

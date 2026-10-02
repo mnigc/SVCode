@@ -227,26 +227,27 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 8px 6px 10px;
+  gap: 2px;
+  padding: 0 6px 6px 8px;
 }
 
 .sidebar-tab {
   font: inherit;
   font-size: 11px;
   font-weight: 400;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--fg-faint);
   background: none;
   border: 0;
   border-radius: 6px;
-  padding: 3px 7px;
+  padding: 3px 5px;
   cursor: default;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 60%;
+  /* three tabs share the strip now — each may take at most a third-ish */
+  max-width: 36%;
 }
 
 .sidebar-tab:hover {
@@ -1076,7 +1077,7 @@
 }
 
 .status-error {
-  color: var(--warn);
+  color: var(--danger);
 }
 
 .status-error:hover {
@@ -1255,13 +1256,6 @@
   color: var(--fg);
 }
 
-.search-name mark {
-  background: color-mix(in srgb, var(--warn) 45%, transparent);
-  color: inherit;
-  border-radius: 2px;
-  padding: 0 1px;
-}
-
 .search-dir {
   flex: 1;
   min-width: 0;
@@ -1270,6 +1264,54 @@
   direction: rtl;
   text-align: left;
   font-size: 11px;
+  color: var(--fg-faint);
+}
+
+/* Content hits: two-line row — file line on top, text snippet under it. */
+.search-row.has-snip {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 2px;
+}
+
+.search-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.search-snip {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-left: 20px; /* lines up with the name, past the file icon */
+  min-width: 0;
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+
+.search-snip .snip-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Shared hit-highlight style for the name and snippet columns. */
+.search-name mark,
+.search-snip mark {
+  background: color-mix(in srgb, var(--warn) 45%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.search-snip .snip-hits {
+  flex: none;
+  font-size: 10px;
   color: var(--fg-faint);
 }
 
@@ -1929,7 +1971,7 @@ code {
 }
 
 .about-features li::before {
-  content: '¹3';
+  content: '•';
   position: absolute;
   left: 2px;
   font-size: 11px;

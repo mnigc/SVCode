@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react'
 import { create } from 'zustand'
-import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
+import { invoke } from '@tauri-apps/api/core'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { useWorkspace, THIS_PC, IS_WINDOWS, type NodeInfo } from '../store/workspace'
 import { useQuickAccess } from '../store/quickAccess'
 import { useSearch } from '../lib/search'
 import { useSettings } from '../lib/settings'
 import { basename, dirname, isRootPath, isUncShareRoot } from '../lib/paths'
-import { useT, t } from '../lib/i18n'
+import { useT, t, tBackend } from '../lib/i18n'
+import { MENU_EDGE_MARGIN } from '../lib/menuClamp'
 
 /**
  * Inline create/rename editing state for the file tree, shared so any entry
@@ -31,13 +33,15 @@ export const useTreeEditing = create<TreeEditingState>((set) => ({
 }))
 
 /**
- * Hand a file to the Windows default application (opener plugin). Shared by
- * the context menu and the tree row's double-click; failures surface in the
- * status-bar notice.
+ * Hand a file to the Windows default application. Goes through the backend
+ * `open_external` command so executable extensions are refused on the Rust
+ * side (the opener plugin's open-path permission was removed for this).
+ * Shared by the context menu and the tree row's double-click; failures
+ * surface in the status-bar notice.
  */
 export function openExternal(path: string) {
-  void openPath(path).catch((err) => {
-    useWorkspace.setState({ notice: t('card.openFailed', { msg: String(err) }) })
+  void invoke('open_external', { path }).catch((err) => {
+    useWorkspace.setState({ notice: t('card.openFailed', { msg: tBackend(String(err)) }) })
   })
 }
 
@@ -255,8 +259,8 @@ export function NodeMenu({
     )
   }
 
-  // Keep the panel on screen.
-  const left = Math.min(x, window.innerWidth - 190)
+  // Keep the panel on screen (MENU_EDGE_MARGIN = 菜单贴边钳位余量).
+  const left = Math.min(x, window.innerWidth - MENU_EDGE_MARGIN)
   const top = Math.min(y, window.innerHeight - items.length * 30 - 20)
 
   return (

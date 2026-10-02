@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useWorkspace } from '../store/workspace'
 import { useT } from '../lib/i18n'
+import { useFocusTrap } from '../lib/useFocusTrap'
 
 /**
  * Modal input for mounting a `\\server\share` location under 此电脑.
@@ -10,13 +11,13 @@ import { useT } from '../lib/i18n'
 export function NetworkLocationDialog({ onClose }: { onClose: () => void }) {
   const t = useT()
   const ref = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   const [value, setValue] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    ref.current?.focus()
-  }, [])
+  // Focus the input and keep Tab cycling inside the dialog.
+  useFocusTrap(dialogRef, true)
 
   const submit = async () => {
     if (!value.trim() || busy) return
@@ -34,6 +35,7 @@ export function NetworkLocationDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className="about-backdrop" onClick={busy ? undefined : onClose}>
       <div
+        ref={dialogRef}
         className="settings-dialog"
         role="dialog"
         aria-modal
@@ -50,6 +52,8 @@ export function NetworkLocationDialog({ onClose }: { onClose: () => void }) {
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
             e.stopPropagation()
+            // IME composition: Enter/Escape belong to the IME until it settles.
+            if (e.nativeEvent.isComposing) return
             if (e.key === 'Enter') void submit()
             else if (e.key === 'Escape') onClose()
           }}

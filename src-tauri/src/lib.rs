@@ -1,3 +1,15 @@
+//! SVCode backend.
+//!
+//! Security model (deliberate trade-offs for a file editor): the custom
+//! `fs::*` commands intentionally do NOT constrain paths to a workspace root,
+//! and the `asset:` protocol scope in tauri.conf.json is `**` — the editor
+//! must list/read/save files the user points it at anywhere on disk, images
+//! and PDFs included. A compromised webview therefore equals arbitrary file
+//! read/write by design; what IS narrowed is the opener surface: the
+//! webview-facing `opener:allow-open-path` permission was removed and opening
+//! files goes through `fs::open_external`, which refuses executable/script
+//! extensions.
+
 mod fs;
 mod search;
 mod terminal;
@@ -5,6 +17,11 @@ mod watcher;
 mod wfs;
 
 use tauri::Manager;
+
+// Mutexes here tolerate poisoning (`unwrap_or_else(|p| p.into_inner())`):
+// the app builds with panic=abort, so a poisoned lock means a thread already
+// panicked — aborting the whole process instead of carrying on with coherent
+// enough state buys nothing.
 
 /// Whether closing the main window hides it to the tray (background) or
 /// really quits. The frontend mirrors the settings value here at startup and
@@ -21,7 +38,7 @@ fn show_main(app: &tauri::AppHandle) {
 
 #[tauri::command]
 fn set_close_to_tray(state: tauri::State<'_, CloseToTray>, enabled: bool) {
-    *state.0.lock().unwrap() = enabled;
+    *state.0.lock().unwrap_or_else(|p| p.into_inner()) = enabled;
 }
 
 /// Real quit — `win.close()` from JS is intercepted by the tray handler, so
@@ -51,7 +68,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(CloseToTray(std::sync::Mutex::new(true)))
         .setup(|app| {
-            app.manage(watcher::init(&app.handle()));
+            app.manage(watcher::init(app.handle()));
 
             let open = MenuItem::with_id(app, "open", "显示 SVCode", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
@@ -91,7 +108,7 @@ pub fn run() {
                         .state::<CloseToTray>()
                         .0
                         .lock()
-                        .unwrap();
+                        .unwrap_or_else(|p| p.into_inner());
                     if hide {
                         api.prevent_close();
                         let _ = window.hide();
@@ -113,6 +130,7 @@ pub fn run() {
             fs::delete_path,
             fs::copy_path,
             fs::move_path,
+            fs::open_external,
             terminal::open_terminal,
             search::search_files,
             search::search_status,

@@ -160,6 +160,24 @@ function outlinePanel(view: EditorView): Panel {
   close.title = 'Esc'
   row.append(input, close)
 
+  // Rebuilds are O(symbols) DOM churn; while the panel is open every
+  // keystroke/undo step re-fired one. Debounce, but keep filter typing
+  // instant (the filter rebuild only walks the already-extracted list).
+  let rebuildTimer: ReturnType<typeof setTimeout> | null = null
+  function scheduleRebuild() {
+    if (rebuildTimer !== null) return
+    rebuildTimer = setTimeout(() => {
+      rebuildTimer = null
+      rebuild()
+    }, 150)
+  }
+  function cancelScheduledRebuild() {
+    if (rebuildTimer !== null) {
+      clearTimeout(rebuildTimer)
+      rebuildTimer = null
+    }
+  }
+
   const list = document.createElement('div')
   list.className = 'sv-outline-list'
 
@@ -200,17 +218,31 @@ function outlinePanel(view: EditorView): Panel {
     }
   }
 
-  function refreshSymbols() {
+  function refreshSymbols(immediate = false) {
     const base = view.state.facet(outlineExtKey)
     symbols = extractSymbols(view.state, base)
-    rebuild()
+    if (immediate) {
+      cancelScheduledRebuild()
+      rebuild()
+    } else {
+      scheduleRebuild()
+    }
   }
 
   input.addEventListener('input', () => {
     filter = input.value
+    // Filter feedback must feel instant — rebuild right away.
+    cancelScheduledRebuild()
     rebuild()
   })
   close.addEventListener('click', () => {
+    view.dispatch({ effects: setOutlinePanel.of(false) })
+    view.focus()
+  })
+  // The close button is titled "Esc" — honor it (skip during IME composition).
+  dom.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.isComposing) return
+    e.preventDefault()
     view.dispatch({ effects: setOutlinePanel.of(false) })
     view.focus()
   })
@@ -219,11 +251,14 @@ function outlinePanel(view: EditorView): Panel {
     dom,
     top: false,
     mount() {
-      refreshSymbols()
+      refreshSymbols(true)
       input.focus()
     },
     update(update) {
       if (update.docChanged || update.transactions.some((tr) => tr.reconfigured)) refreshSymbols()
+    },
+    destroy() {
+      cancelScheduledRebuild()
     },
   }
 }

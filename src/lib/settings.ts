@@ -39,6 +39,39 @@ export const DEFAULT_SETTINGS: SettingsValues = {
 
 const PERSIST_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof SettingsValues)[]
 
+/**
+ * Per-field load validation. settings.json is data at rest (older app
+ * versions, manual edits, a truncated write): a value of the wrong type or
+ * outside the UI's own range is dropped in favour of the default rather than
+ * trusted — the Stepper offers fontSize 11–24 and tabSize 2/4/8, so anything
+ * else was never a legitimate choice.
+ */
+const THEME_NAMES: ThemeName[] = ['dark', 'light', 'auto']
+const LANG_NAMES: LangPref[] = ['auto', 'zh', 'en']
+const VIEW_NAMES: ViewPref[] = ['edit', 'both', 'preview']
+
+function isValidValue(key: keyof SettingsValues, v: unknown): boolean {
+  switch (key) {
+    case 'theme':
+      return THEME_NAMES.includes(v as ThemeName)
+    case 'lang':
+      return LANG_NAMES.includes(v as LangPref)
+    case 'defaultView':
+      return VIEW_NAMES.includes(v as ViewPref)
+    case 'fontSize':
+      return typeof v === 'number' && Number.isInteger(v) && v >= 11 && v <= 24
+    case 'tabSize':
+      return typeof v === 'number' && (v === 2 || v === 4 || v === 8)
+    case 'netLocations':
+      return Array.isArray(v) && v.every((p) => typeof p === 'string' && p.length > 0)
+    case 'wordWrap':
+    case 'lineNumbers':
+    case 'showHidden':
+    case 'closeToTray':
+      return typeof v === 'boolean'
+  }
+}
+
 export interface SettingsState extends SettingsValues {
   loaded: boolean
 
@@ -54,10 +87,12 @@ export const useSettings = create<SettingsState>((set, get) => ({
     try {
       const saved = await kv('settings.json').then((k) => k.get<Partial<SettingsValues>>('settings'))
       if (saved) {
-        // Only known keys, over the defaults — stale/unknown entries in the
-        // file must not leak into state (e.g. after a setting is removed).
+        // Only known keys of the right type/range, over the defaults — stale
+        // or malformed entries in the file must not leak into state (e.g.
+        // after a setting is removed or a file was hand-edited).
         const clean = PERSIST_KEYS.reduce<Partial<SettingsValues>>((acc, key) => {
-          if (saved[key] !== undefined) (acc[key] as SettingsValues[typeof key]) = saved[key]!
+          if (saved[key] !== undefined && isValidValue(key, saved[key]))
+            (acc[key] as SettingsValues[typeof key]) = saved[key]!
           return acc
         }, {})
         set({ ...clean, loaded: true })

@@ -33,6 +33,13 @@ export function parseXlsxInWorker(
       else finish(() => reject(new Error(msg.message)))
     }
     worker.onerror = () => finish(() => reject(new Error('xlsx worker crashed')))
-    worker.postMessage({ buf }, [buf])
+    // postMessage throws synchronously when `buf` was already detached (an
+    // earlier transfer, e.g. a tab switch racing this parse): without the
+    // guard the promise never settles and the worker leaks.
+    try {
+      worker.postMessage({ buf }, [buf])
+    } catch (err) {
+      finish(() => reject(err instanceof Error ? err : new Error(String(err))))
+    }
   })
 }

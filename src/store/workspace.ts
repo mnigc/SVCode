@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { ask } from '@tauri-apps/plugin-dialog'
-import { basename, dirname, extname, fileKind, joinPath, isRootPath, normalizeUnc, type FileKind } from '../lib/paths'
+import { basename, dirname, extname, fileKind, isRootPath, isUncShareRoot, joinPath, normalizeUnc, type FileKind } from '../lib/paths'
 import { t, tBackend, tDriveName } from '../lib/i18n'
 import { useSettings } from '../lib/settings'
 import { DIR_ICON, NET_ICON, PC_ICON, driveIcon, fileIcon } from '../lib/fileIcons'
@@ -80,6 +80,11 @@ export interface TabInfo {
    * fetched or when the volume refuses to report one. */
   createdMs: number | null
   modifiedMs: number | null
+  /** The disk mtime as of the last read_text (read_text reports it) — sent
+   * back as `expectedMtimeMs` on save so the backend can refuse to overwrite
+   * a file that changed externally. null = unknown (draft-restored tabs),
+   * which skips the guard rather than failing every save. */
+  mtimeMs: number | null
   dirty: boolean
   readOnly: boolean
   loading: boolean
@@ -99,6 +104,8 @@ interface TextContent {
   eol: string
   size: number
   readOnly: boolean
+  /** Disk mtime at read time (Unix ms); feeds the tab's save guard. */
+  mtimeMs: number
 }
 
 interface FileTimes {
@@ -155,7 +162,10 @@ interface WorkspaceState {
   addNetworkLocation: (raw: string) => Promise<void>
   /** Unmount a network location: drop its subtree from the tree and settings. */
   removeNetworkLocation: (path: string) => void
-  toggleNode: (path: string) => Promise<void>
+  /** Expand/collapse one directory. Updates the selection unless
+   * `opts.select === false` — programmatic expansion (reveal walks, session
+   * restore) must not stomp the row the user last picked. */
+  toggleNode: (path: string, opts?: { select?: boolean }) => Promise<void>
   openFile: (path: string) => Promise<void>
   /** Open `path` in a new group to the right of the active one. */
   openToSide: (path: string) => Promise<void>
@@ -169,7 +179,10 @@ interface WorkspaceState {
    * remaining tab (append when out of range) and activate it there. Same
    * group + shifted index = reorder. */
   moveTab: (path: string, toGroup: number, index: number) => void
-  editActive: (group: number, text: string, lineCount: number) => void
+  /** Apply an editor keystroke to the tab with exactly `path` (the editor
+   * holds its tab's ref — group membership can change under it mid-typing).
+   * Line count is derived here so the status bar stays consistent. */
+  editActive: (path: string, text: string) => void
   saveActive: () => Promise<void>
   dismissNotice: () => void
 
@@ -263,12 +276,22 @@ let nextGroupId = INITIAL_GROUP + 1
 let nextRowId = INITIAL_ROW + 1
 
 /**
+ * Per-path generation of in-flight `read_text` calls. Closing a tab and
+ * quickly reopening the same file leaves two reads racing: the older one
+ * must never land on the fresh tab (it could paint stale content over a
+ * just-loaded buffer), so every readTab bumps the counter and a response
+ * whose generation no longer matches is dropped.
+ */
+const readGenerations = new Map<string, number>()
+
+/**
  * Drop tabs matching `drop`, then rebalance: a group whose active tab went
  * away falls back to its last tab, and emptied groups are removed — except
  * the last one, which survives empty so the workbench always shows one
  * editor area.
  */
 function dropTabs(s: WorkspaceState, drop: (t: TabInfo) => boolean): Partial<WorkspaceState> {
+  const dropped = s.tabs.filter(drop)
   const tabs = s.tabs.filter((t) => !drop(t))
   const groupActive = { ...s.groupActive }
   for (const g of flatGroups(s.rows)) {
@@ -284,7 +307,16 @@ function dropTabs(s: WorkspaceState, drop: (t: TabInfo) => boolean): Partial<Wor
       groupActive[g] = null
     }
   }
-  return { tabs, groupActive, activeGroup: s.activeGroup }
+  const partial: Partial<WorkspaceState> = { tabs, groupActive, activeGroup: s.activeGroup }
+  if (dropped.length > 0) {
+    // Viewer zoom is keyed by path; entries of closed tabs would otherwise
+    // accumulate forever (and resurrect on a later file with the same path —
+    // zoom is a per-tab preference, not a per-file one).
+    const zoom = { ...s.zoom }
+    for (const t of dropped) delete zoom[t.path]
+    partial.zoom = zoom
+  }
+  return partial
 }
 
 function node(path: string, name: string, isDir: boolean, hidden = false): NodeInfo {
@@ -328,7 +360,8 @@ const confirmDiscard = (count: number): Promise<boolean> =>
  * listed. Never collapses: already-open levels are skipped, so re-reveals
  * (search hits, tab clicks, Quick Access) can't fold the tree back up.
  * `toggleNode` supplies listing, expansion and watching for each new level;
- * the walk naturally stops at the always-loaded root/drive nodes.
+ * the walk naturally stops at the always-loaded root/drive nodes. It never
+ * touches the selection — callers write it once up front.
  */
 async function expandRevealChain(
   get: () => WorkspaceState,
@@ -341,7 +374,7 @@ async function expandRevealChain(
     }
     const n = get().nodes[dir]
     if ((n.expanded && n.children) || n.access === 'denied') continue
-    await get().toggleNode(dir)
+    await get().toggleNode(dir, { select: false })
   }
 }
 
@@ -351,6 +384,10 @@ function ancestorChain(path: string): string[] {
   let cur = dirname(path)
   while (cur && cur !== ROOT && cur !== THIS_PC) {
     chain.unshift(cur)
+    // A UNC share root (\\srv\share) is a top-level tree node like a drive;
+    // walking past it would produce `\\srv` / `\\` — ancestors no node can
+    // ever have.
+    if (isUncShareRoot(cur)) break
     const parent = dirname(cur)
     if (parent === cur) break
     cur = parent
@@ -379,6 +416,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       size: null,
       createdMs: null,
       modifiedMs: null,
+      mtimeMs: null,
       dirty: false,
       readOnly: false,
       loading: kind === 'text' || kind === 'markdown',
@@ -388,8 +426,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
   /** Load a just-appended tab's content, or surface the read error on it. */
   const readTab = async (path: string) => {
+    // Each open of `path` mints a new generation; a sibling read left in
+    // flight by a close/reopen cycle is invalidated by the bump.
+    const gen = (readGenerations.get(path) ?? 0) + 1
+    readGenerations.set(path, gen)
     try {
       const content = await invoke<TextContent>('read_text', { path })
+      if (readGenerations.get(path) !== gen) return
+      const mtimeMs = Number.isFinite(content.mtimeMs) ? content.mtimeMs : null
       set((s) => ({
         tabs: s.tabs.map((t) =>
           t.path === path
@@ -402,12 +446,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
                 eol: content.eol,
                 size: content.size,
                 readOnly: content.readOnly,
+                mtimeMs,
                 loading: false,
               }
             : t,
         ),
       }))
     } catch (err) {
+      if (readGenerations.get(path) !== gen) return
       set((s) => ({
         tabs: s.tabs.map((t) => (t.path === path ? { ...t, loading: false, error: describe(err) } : t)),
       }))
@@ -415,13 +461,17 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
   }
 
   /** Timestamps for the group status bar — best-effort: a vanished file
-   * simply keeps the cells empty rather than raising a notice. */
+   * simply keeps the cells empty rather than raising a notice. Also refreshes
+   * the save-guard mtime (same stat source as read_text's mtimeMs), which
+   * saveActive leans on to pick up the post-write mtime. */
   const fetchTimes = async (path: string) => {
     try {
       const ft = await invoke<FileTimes>('file_times', { path })
       set((s) => ({
         tabs: s.tabs.map((t) =>
-          t.path === path ? { ...t, createdMs: ft.createdMs, modifiedMs: ft.modifiedMs } : t,
+          t.path === path
+            ? { ...t, createdMs: ft.createdMs, modifiedMs: ft.modifiedMs, mtimeMs: ft.modifiedMs }
+            : t,
         ),
       }))
     } catch {
@@ -435,12 +485,24 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
    * content plus a notice — deletion must not silently drop what the user
    * is viewing. */
   const reloadTab = async (path: string) => {
+    // Buffer snapshot at launch: the read is in flight for a while, and
+    // keystrokes landing during that window must win over the disk text.
+    const before = get().tabs.find((t) => t.path === path)
+    const gen = readGenerations.get(path) ?? 0
     try {
       const content = await invoke<TextContent>('read_text', { path })
+      // A close/reopen of this file while the read was in flight invalidates
+      // us the same way it invalidates a stale readTab.
+      if (readGenerations.get(path) !== gen) return
       void fetchTimes(path)
+      const mtimeMs = Number.isFinite(content.mtimeMs) ? content.mtimeMs : null
       set((s) => ({
         tabs: s.tabs.map((tab) => {
           if (tab.path !== path) return tab
+          // The tab was edited since the read started (it went dirty, or its
+          // text moved off the snapshot): the user's buffer wins — never
+          // overwrite in-flight edits with the disk text.
+          if (tab.dirty || tab.text !== (before?.text ?? tab.text)) return tab
           if (
             tab.text === content.text &&
             tab.encoding === content.encoding &&
@@ -457,12 +519,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
             eol: content.eol,
             size: content.size,
             readOnly: content.readOnly,
+            mtimeMs,
             loading: false,
             error: null,
           }
         }),
       }))
     } catch {
+      if (readGenerations.get(path) !== gen) return
       set({ notice: t('ws.reloadFailed', { name: basename(path) }) })
     }
   }
@@ -586,7 +650,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     zoom: {},
     clipboard: null,
 
-    sidebarWidth: 260,
+    sidebarWidth: 320,
     previewRatio: 0.34,
     sidebarOpen: true,
     groupView: { [INITIAL_GROUP]: 'both' },
@@ -678,10 +742,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       useSettings.getState().patch({ netLocations: cur.filter((c) => c.toLowerCase() !== lower) })
     },
 
-    toggleNode: async (path) => {
+    toggleNode: async (path, opts) => {
       const current = get().nodes[path]
       if (!current) return
-      set({ selectedDir: path === THIS_PC ? null : path, selectedPath: path, notice: null })
+      // Only a genuine user toggle moves the selection; programmatic
+      // expansion (reveal walks, session restore) passes select:false so it
+      // never stomps the row the user last picked.
+      if (opts?.select !== false)
+        set({ selectedDir: path === THIS_PC ? null : path, selectedPath: path, notice: null })
 
       if (current.expanded) {
         patch(path, { expanded: false })
@@ -857,17 +925,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       focusTab(path, toGroup)
     },
 
-    editActive: (group, text, lineCount) =>
-      set((s) => {
-        const active = s.groupActive[group]
-        return {
-          tabs: s.tabs.map((t) =>
-            t.group === group && t.path === active
-              ? { ...t, text, lineCount, dirty: text !== t.original }
-              : t,
-          ),
-        }
-      }),
+    editActive: (path, text) =>
+      set((s) => ({
+        tabs: s.tabs.map((t) =>
+          t.path === path
+            ? { ...t, text, lineCount: countLines(text), dirty: text !== t.original }
+            : t,
+        ),
+      })),
 
     saveActive: async () => {
       const s = get()
@@ -875,19 +940,32 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         (t) => t.group === s.activeGroup && t.path === s.groupActive[s.activeGroup],
       )
       if (!tab || !tab.dirty || tab.readOnly) return
+      // Snapshot what we are about to write: write_text takes a while, and
+      // keystrokes landing during that window are NOT on disk yet.
+      const snapshot = tab.text
       try {
         const newSize = await invoke<number>('write_text', {
           path: tab.path,
-          text: tab.text,
+          text: snapshot,
           encoding: tab.encoding,
           eol: tab.eol,
+          // Refuse to clobber an externally modified file; null (never read
+          // from disk, e.g. a draft-restored tab) skips the guard.
+          expectedMtimeMs: tab.mtimeMs ?? undefined,
         })
         set((s) => ({
           notice: null,
-          tabs: s.tabs.map((t) =>
-            t.path === tab.path ? { ...t, dirty: false, original: t.text, size: newSize } : t,
-          ),
+          tabs: s.tabs.map((t) => {
+            if (t.path !== tab.path) return t
+            // Only settle the save when the buffer still holds exactly what
+            // was written — newer input stays dirty and needs another save.
+            if (t.text !== snapshot) return t
+            return { ...t, dirty: false, original: snapshot, size: newSize }
+          }),
         }))
+        // The write bumped the disk mtime: refresh the guard value from the
+        // post-write stat, or the next save would present the pre-write
+        // mtime and be (wrongly) rejected as an external modification.
         void fetchTimes(tab.path)
       } catch (err) {
         set({ notice: t('ws.saveFailed', { msg: describe(err) }) })
@@ -898,6 +976,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       // Expand the ancestor chain (stubbing never-listed levels — a file
       // opened via search can live in an unopened drive), select the parent,
       // and expand the target itself when it is a folder. Never collapses.
+      // Selection is written once up front; the programmatic toggles below
+      // must not re-point it at every ancestor they walk through.
       set({ selectedDir: dirname(path), selectedPath: path, notice: null })
       await expandRevealChain(get, set, ancestorChain(path))
       const target = get().nodes[path]
@@ -906,7 +986,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         target.access !== 'denied' &&
         !(target.expanded && target.children)
       ) {
-        await get().toggleNode(path)
+        await get().toggleNode(path, { select: false })
       }
     },
 
@@ -918,21 +998,29 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       const target = get().nodes[path]
       if (!target) return
       if (target.access !== 'denied' && !(target.expanded && target.children)) {
-        await get().toggleNode(path)
+        await get().toggleNode(path, { select: false })
       }
     },
 
     expandDirs: async (paths) => {
       // Round after round until nothing new loads, so nested saved dirs work
-      // regardless of the order they were persisted in.
-      let pending = paths.filter((p) => p !== THIS_PC && p !== ROOT)
+      // regardless of the order they were persisted in. A dir the tree never
+      // listed is stubbed first (the expandRevealChain trick) instead of
+      // dropped: restoring the saved expanded list must not depend on the
+      // order last session's listings happened to arrive in. A stub whose
+      // path no longer exists stays invisible — no parent's children list
+      // references it — and toggleNode's failure just leaves it collapsed.
+      const wanted = paths.filter((p) => p !== THIS_PC && p !== ROOT)
+      let pending = [...wanted]
       while (pending.length > 0) {
         const round = pending
         pending = []
         for (const dir of round) {
-          const node = get().nodes[dir]
-          if (!node) continue
-          if (node.children) {
+          if (!get().nodes[dir]) {
+            set((s) => ({ nodes: { ...s.nodes, [dir]: node(dir, basename(dir), true) } }))
+          }
+          const n = get().nodes[dir]!
+          if (n.children) {
             patch(dir, { expanded: true })
           } else {
             pending.push(dir)
@@ -941,7 +1029,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         if (pending.length === round.length) {
           // Nothing left is already loaded — list the rest sequentially so
           // parents exist before children try to expand.
-          for (const dir of pending) await get().toggleNode(dir)
+          for (const dir of pending) await get().toggleNode(dir, { select: false })
           return
         }
       }
@@ -956,6 +1044,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       const g = group ?? get().activeGroup
       const tab = beginTab(path, g)
       set((s) => ({ tabs: [...s.tabs, tab], groupActive: { ...s.groupActive, [g]: path } }))
+      // Restored tabs get the same status-bar timestamps (and save-guard
+      // mtime) as normally opened ones — the restore path just skipped them.
+      void fetchTimes(path)
       syncTabWatches()
       if (!tab.loading) return
 
@@ -1135,6 +1226,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         if (clip.mode === 'cut') {
           relocate(clip.path, dest)
           set({ clipboard: null })
+          // relocate remaps the moved subtree itself, but the SOURCE folder's
+          // children list still names the old path — without a re-list it
+          // renders as a ghost row pointing at a relocated node.
+          void get().reloadDir(dirname(clip.path))
         }
         await get().reloadDir(dir)
         syncTabWatches()
@@ -1209,6 +1304,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         const groupRatios = { ...s.groupRatios }
         const groupView = { ...s.groupView }
         const rowRatios = { ...s.rowRatios }
+        // The group's tabs go away with it — their zoom entries would be
+        // dead weight (dropTabs does the same for per-tab closes).
+        const zoom = { ...s.zoom }
+        for (const t of s.tabs) if (t.group === group) delete zoom[t.path]
         delete groupActive[group]
         delete groupRatios[group]
         delete groupView[group]
@@ -1224,8 +1323,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           rowRatios[rid] = 1
           activeGroup = gid
         } else {
-          // The emptied row vanished with its last group.
-          if (row && !rows.includes(row)) delete rowRatios[row.id]
+          // The emptied row vanished with its last group. Identity checks
+          // don't work here — map() produced fresh objects — so compare ids.
+          if (row && !rows.some((r) => r.id === row.id)) delete rowRatios[row.id]
           if (activeGroup === group) {
             const flat = flatGroups(rows)
             activeGroup = flat[Math.min(Math.max(0, flatGroups(s.rows).indexOf(group) - 1), flat.length - 1)]
@@ -1238,6 +1338,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           groupRatios,
           groupView,
           rowRatios,
+          zoom,
           activeGroup,
         }
       })

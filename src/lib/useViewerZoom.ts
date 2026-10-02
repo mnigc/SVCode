@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useWorkspace } from '../store/workspace'
 import { ZOOM_STEP, clampZoom, type ZoomKind } from './viewerZoom'
+import { isModalOpen } from './isModalOpen'
 
 /**
  * Shared zoom plumbing for the fit-based viewers (raster image, SVG
@@ -71,6 +72,8 @@ export function useViewerZoom(path: string, kind: ZoomKind, isActive: boolean) {
     const onKey = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.altKey || e.metaKey) return
       if (e.key !== '=' && e.key !== '+' && e.key !== '-' && e.key !== '0') return
+      // A modal dialog owns the screen — don't zoom behind it.
+      if (isModalOpen()) return
       e.preventDefault()
       zoomAt(
         e.key === '-' ? zoomRef.current / ZOOM_STEP : e.key === '0' ? 1 : zoomRef.current * ZOOM_STEP,

@@ -1,7 +1,9 @@
 //! WFSearch engine client over its loopback HTTP gateway
-//! (`http://127.0.0.1:15100/api/v1/..`, protocol v1) plus the lifecycle of
+//! (`http://127.0.0.1:15100/api/v1/..`, protocol v2) plus the lifecycle of
 //! the bundled `wfs-server` sidecar. All calls are blocking and must run off
-//! the UI thread (`spawn_blocking`).
+//! the UI thread (`spawn_blocking`). The v2 wire additions (content-search
+//! fields) are optional on both sides, so the client keeps working against a
+//! v1 engine too — they just stay `None`.
 //!
 //! HTTP rather than the named pipe on purpose: a service-installed engine
 //! runs as LocalSystem, and the pipe it creates then refuses connections from
@@ -36,6 +38,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const HOST: &str = "127.0.0.1";
 const PORT: u16 = 15100;
 const TIMEOUT: Duration = Duration::from_secs(3);
+/// `content:` queries scan real files under the engine's own budget (10 s by
+/// default), so the client read timeout has to clear it with margin.
+const SEARCH_TIMEOUT: Duration = Duration::from_secs(15);
 /// Header the gateway authenticates; mirrors `wfs_server::http::TOKEN_HEADER`.
 const TOKEN_HEADER: &str = "x-wfs-token";
 /// Minimum gap between sidecar spawn attempts — a server whose REPL stdin
@@ -68,12 +73,30 @@ pub struct FileResult {
     pub name: String,
     pub path: String,
     pub is_dir: bool,
+    /// content-search context around the first hit (v2, absent on name hits)
+    pub snippet: Option<String>,
+    /// content-search hit count in this file (v2, absent on name hits)
+    pub content_matches: Option<u32>,
+}
+
+/// Bookkeeping for a `content:` query's scan phase (v2); the counters the UI
+/// does not show are ignored on deserialize.
+#[derive(Deserialize)]
+pub struct ContentScanInfo {
+    #[allow(dead_code)]
+    pub scanned: u32,
+    /// the candidate window ran out before every matching file was scanned
+    pub truncated: bool,
+    /// the engine's time budget ran out before all candidates were scanned
+    pub timed_out: bool,
 }
 
 #[derive(Deserialize)]
 pub struct SearchResp {
     pub total_matched: u64,
     pub results: Vec<FileResult>,
+    /// present only for `content:` queries
+    pub content: Option<ContentScanInfo>,
 }
 
 #[derive(Deserialize)]
@@ -101,16 +124,23 @@ fn now_ms() -> u64 {
 }
 
 /// Where the engine publishes its bearer token — the same path
-/// `wfs_client::default_token_path` computes.
-fn token_path() -> PathBuf {
-    std::env::var("ProgramData")
-        .map(|p| PathBuf::from(p).join("WFSearch"))
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("http.token")
+/// `wfs_client::default_token_path` computes. `ProgramData` is always set on
+/// Windows; if it is missing that is an environment problem, and silently
+/// falling back to the process's cwd (as an earlier revision did) would make
+/// the client read a token file from an arbitrary directory — report it.
+fn token_path() -> io::Result<PathBuf> {
+    match std::env::var("ProgramData") {
+        Ok(dir) if !dir.trim().is_empty() => {
+            Ok(PathBuf::from(dir).join("WFSearch").join("http.token"))
+        }
+        _ => Err(io::Error::other(
+            "环境变量 ProgramData 未设置，无法定位引擎令牌文件",
+        )),
+    }
 }
 
 fn read_token() -> io::Result<String> {
-    let path = token_path();
+    let path = token_path()?;
     let text = std::fs::read_to_string(&path).map_err(|e| {
         io::Error::other(format!(
             "read {}: {e} — start an engine 0.1.0+ (an older service never \
@@ -142,13 +172,18 @@ fn port_open() -> bool {
     TcpStream::connect((HOST, PORT)).is_ok()
 }
 
+/// Responses larger than this are refused outright: a hand-rolled
+/// `read_exact` into one allocation must not be pointed at an unbounded
+/// `content-length` (a wedged/misbehaving engine could OOM the app).
+const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
+
 /// One-shot authenticated GET → (status code, JSON body). Hand-rolled on
 /// `TcpStream` to stay dependency-free against a server that always answers
 /// with `content-length` + JSON.
-fn http_get(path: &str, token: &str) -> io::Result<(u16, Value)> {
+fn http_get(path: &str, token: &str, timeout: Duration) -> io::Result<(u16, Value)> {
     let mut sock = TcpStream::connect((HOST, PORT))?;
-    sock.set_read_timeout(Some(TIMEOUT))?;
-    sock.set_write_timeout(Some(TIMEOUT))?;
+    sock.set_read_timeout(Some(timeout))?;
+    sock.set_write_timeout(Some(timeout))?;
     sock.write_all(
         format!(
             "GET {path} HTTP/1.1\r\nHost: {HOST}:{PORT}\r\n{TOKEN_HEADER}: {token}\r\nConnection: close\r\n\r\n"
@@ -176,14 +211,33 @@ fn http_get(path: &str, token: &str) -> io::Result<(u16, Value)> {
         .nth(1)
         .and_then(|c| c.parse().ok())
         .ok_or_else(|| io::Error::other("wfs: bad status line"))?;
+    // This reader can only decode content-length bodies. A chunked reply read
+    // byte-for-byte would be misparsed as JSON garbage — refuse it explicitly
+    // instead.
+    let chunked = text.lines().any(|l| match l.split_once(':') {
+        Some((k, v)) => {
+            k.trim().eq_ignore_ascii_case("transfer-encoding")
+                && v.trim().to_ascii_lowercase().contains("chunked")
+        }
+        None => false,
+    });
+    if chunked {
+        return Err(io::Error::other("引擎使用了暂不支持的 chunked 传输编码"));
+    }
     let length: usize = text
         .lines()
         .find_map(|l| {
             let (k, v) = l.split_once(':')?;
-            k.trim().eq_ignore_ascii_case("content-length")
+            k.trim()
+                .eq_ignore_ascii_case("content-length")
                 .then(|| v.trim().parse().ok())?
         })
         .ok_or_else(|| io::Error::other("wfs: missing content-length"))?;
+    if length > MAX_BODY_BYTES {
+        return Err(io::Error::other(format!(
+            "引擎响应过大（{length} 字节，超过 16MB 上限），已拒绝读取"
+        )));
+    }
 
     let mut body = vec![0u8; length];
     sock.read_exact(&mut body)?;
@@ -201,11 +255,7 @@ fn err_msg(json: &Value) -> io::Error {
 }
 
 fn get(path: &str) -> io::Result<Value> {
-    let (status, json) = http_get(path, &read_token()?)?;
-    if status != 200 {
-        return Err(err_msg(&json));
-    }
-    Ok(json)
+    get_with_timeout(path, TIMEOUT)
 }
 
 pub fn availability() -> Availability {
@@ -215,7 +265,7 @@ pub fn availability() -> Availability {
     let Ok(token) = read_token() else {
         return Availability::Blocked;
     };
-    match http_get("/api/v1/status", &token) {
+    match http_get("/api/v1/status", &token, TIMEOUT) {
         Ok((200, _)) => Availability::Ready,
         // 401 means the engine re-minted its token while ours went stale, or
         // the port belongs to a process that is not the engine at all. Either
@@ -229,8 +279,21 @@ pub fn ping() -> bool {
 }
 
 pub fn search(q: &str, limit: u32) -> io::Result<SearchResp> {
-    let json = get(&format!("/api/v1/search?q={}&limit={limit}", urlencode(q)))?;
+    let json = get_with_timeout(
+        &format!("/api/v1/search?q={}&limit={limit}", urlencode(q)),
+        SEARCH_TIMEOUT,
+    )?;
     serde_json::from_value(json).map_err(io::Error::other)
+}
+
+/// Like `get`, but with a caller-chosen read timeout — the content scan runs
+/// on the engine's clock, not the ping/status one.
+fn get_with_timeout(path: &str, timeout: Duration) -> io::Result<Value> {
+    let (status, json) = http_get(path, &read_token()?, timeout)?;
+    if status != 200 {
+        return Err(err_msg(&json));
+    }
+    Ok(json)
 }
 
 pub fn status() -> io::Result<EngineStatus> {
@@ -248,10 +311,7 @@ pub fn status() -> io::Result<EngineStatus> {
 /// name — accept both.
 fn sidecar_path() -> Option<PathBuf> {
     let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
-    let names = [
-        "wfs-server-x86_64-pc-windows-msvc.exe",
-        "wfs-server.exe",
-    ];
+    let names = ["wfs-server-x86_64-pc-windows-msvc.exe", "wfs-server.exe"];
     names.iter().map(|n| dir.join(n)).find(|p| p.exists())
 }
 
@@ -287,10 +347,11 @@ fn service_registered() -> bool {
     registered
 }
 
-/// Asks the SCM to start a registered-but-stopped engine. A standard user is
-/// refused (error 5), which is exactly why the installer hook does this once
-/// while it is still elevated; this retry only covers the service having been
-/// stopped since. Attempted once per process.
+/// Asks the SCM to start a registered-but-stopped engine. The installer hook
+/// grants interactive users SERVICE_START (`wfs-service.nsh`), so this works
+/// from a plain-user SVCode too; only installs predating that grant refuse it
+/// with error 5, and there is nothing to retry against a refusal. Attempted
+/// once per process.
 #[cfg(windows)]
 fn request_service_start() {
     static TRIED: AtomicBool = AtomicBool::new(false);
@@ -318,36 +379,49 @@ pub fn ensure_server() -> bool {
         request_service_start();
         return availability() == Availability::Ready;
     }
-    let mut sidecar = SIDECAR.lock().unwrap();
-    if let Some(child) = sidecar.as_mut() {
-        // Ours is alive but the gateway isn't answering (yet): still booting,
-        // or wedged on a machine that can't grant volume access. Either way
-        // it holds the port, so respawning would only collide.
-        if matches!(child.try_wait(), Ok(None)) {
+    // Spawn decision (child liveness + cooldown + spawn) is quick and stays
+    // under the lock — the liveness check doubles as the concurrency guard,
+    // so two racing callers can never both spawn. The boot wait and re-probe
+    // deliberately run WITHOUT the lock: a cold start must not serialize
+    // unrelated engine requests behind a 400 ms sleep. While we wait, a
+    // concurrent caller sees the live child and simply reports not-ready.
+    {
+        let mut sidecar = SIDECAR
+            .lock()
+            // panic=abort means a poisoned lock would take the whole process
+            // down; tolerating poisoning (the guarded state is a single
+            // Option<Child>) is the deliberate choice.
+            .unwrap_or_else(|p| p.into_inner());
+        if let Some(child) = sidecar.as_mut() {
+            // Ours is alive but the gateway isn't answering (yet): still booting,
+            // or wedged on a machine that can't grant volume access. Either way
+            // it holds the port, so respawning would only collide.
+            if matches!(child.try_wait(), Ok(None)) {
+                return false;
+            }
+            *sidecar = None;
+        }
+        let last = LAST_SPAWN_MS.swap(now_ms(), Ordering::SeqCst);
+        if now_ms().saturating_sub(last) < SPAWN_COOLDOWN.as_millis() as u64 {
             return false;
         }
-        *sidecar = None;
-    }
-    let last = LAST_SPAWN_MS.swap(now_ms(), Ordering::SeqCst);
-    if now_ms().saturating_sub(last) < SPAWN_COOLDOWN.as_millis() as u64 {
-        return false;
-    }
-    let Some(exe) = sidecar_path() else {
-        return false;
-    };
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        *sidecar = std::process::Command::new(exe)
-            .arg("console")
-            // Piped and never written: keeps the REPL blocked, see SIDECAR.
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .ok();
+        let Some(exe) = sidecar_path() else {
+            return false;
+        };
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            *sidecar = std::process::Command::new(exe)
+                .arg("console")
+                // Piped and never written: keeps the REPL blocked, see SIDECAR.
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn()
+                .ok();
+        }
     }
     // The engine mints and publishes its token before opening the gateway, so
     // a short wait usually turns the next probe green; when the spawn lacks
@@ -365,7 +439,12 @@ mod tests {
     #[test]
     #[ignore]
     fn ping_roundtrip_against_live_engine() {
-        assert!(super::ping(), "no engine answering on {}:{}", super::HOST, super::PORT);
+        assert!(
+            super::ping(),
+            "no engine answering on {}:{}",
+            super::HOST,
+            super::PORT
+        );
         let s = super::status().expect("status round-trip");
         assert!(!s.ready || s.files > 0);
     }
@@ -377,6 +456,26 @@ mod tests {
         assert!(
             r.results.iter().any(|f| f.name.contains("rust-toolchain")),
             "engine answered but found no rust-toolchain file"
+        );
+        // v2 fields stay empty on a plain name search
+        assert!(r.results.iter().all(|f| f.snippet.is_none()));
+        assert!(r.content.is_none());
+    }
+
+    /// A `content:` query routes to the engine's document scan (protocol v2).
+    /// Needs a live 0.2.0+ engine and at least one Cargo.toml on disk.
+    #[test]
+    #[ignore]
+    fn content_search_roundtrip_against_live_engine() {
+        let r = super::search("*.toml content:version", 20).expect("content search round-trip");
+        assert!(
+            !r.results.is_empty(),
+            "engine answered but no Cargo.toml mentions 'version'"
+        );
+        assert!(r.content.is_some(), "content scan info missing");
+        assert!(
+            r.results.iter().all(|f| f.snippet.is_some()),
+            "content hits must carry snippets"
         );
     }
 
@@ -393,14 +492,15 @@ mod tests {
             super::PORT
         );
         let (status, body) =
-            super::http_get("/api/v1/status", "definitely-not-the-token").expect("gateway reply");
+            super::http_get("/api/v1/status", "definitely-not-the-token", super::TIMEOUT)
+                .expect("gateway reply");
         assert_eq!(status, 401, "engine accepted a forged token: {body}");
         assert_eq!(body["code"], 4);
         // Whether the client then calls this engine Blocked depends on the
         // engine's `acl`: a restricted one publishes a token this user cannot
         // read, so the credential is missing and the sidecar must not be
         // spawned; a shared one publishes a readable token, which is Ready.
-        let token_readable = std::fs::read_to_string(super::token_path())
+        let token_readable = std::fs::read_to_string(super::token_path().expect("token path"))
             .map(|t| !t.trim().is_empty())
             .unwrap_or(false);
         assert_eq!(
@@ -418,7 +518,7 @@ mod tests {
     /// a missing engine.
     #[test]
     fn token_path_is_the_engines_published_location() {
-        let path = super::token_path();
+        let path = super::token_path().expect("ProgramData is set on Windows");
         assert!(
             path.ends_with(std::path::Path::new("WFSearch").join("http.token")),
             "{}",

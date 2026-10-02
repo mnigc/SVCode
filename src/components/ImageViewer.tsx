@@ -14,24 +14,53 @@ const PAD = 18
 /** Small blob-URL cache shared across tab switches; revoked on evict. */
 const cache = new Map<string, string>()
 const CACHE_MAX = 6
+/**
+ * Per-path reference count of rendered <img>s. Eviction used to revoke the
+ * URL outright — a URL still shown by another group's image viewer died on
+ * screen. Now: a URL is revoked on evict only when nothing references it,
+ * and on final release it is revoked if it has already left the cache.
+ */
+const refs = new Map<string, number>()
+
+function acquireRef(path: string) {
+  refs.set(path, (refs.get(path) ?? 0) + 1)
+}
+
+function releaseRef(path: string, url: string) {
+  const n = (refs.get(path) ?? 1) - 1
+  if (n > 0) {
+    refs.set(path, n)
+    return
+  }
+  refs.delete(path)
+  // Revoke once nothing renders it and the cache no longer owns it (either
+  // evicted, or evicted and replaced by a newer blob for the same path).
+  if (cache.get(path) !== url) URL.revokeObjectURL(url)
+}
 
 async function urlFor(path: string): Promise<string> {
   const hit = cache.get(path)
   if (hit) {
     cache.delete(path)
     cache.set(path, hit)
+    acquireRef(path)
     return hit
   }
   const buf = await invoke<ArrayBuffer>('read_bytes', { path })
   useWorkspace.getState().setTabSize(path, buf.byteLength)
   const url = URL.createObjectURL(new Blob([buf]))
   cache.set(path, url)
+  acquireRef(path)
   while (cache.size > CACHE_MAX) {
     const oldest = cache.keys().next().value
     if (oldest === undefined) break
-    const old = cache.get(oldest)
     cache.delete(oldest)
-    if (old) URL.revokeObjectURL(old)
+    // Still-referenced URLs (another group rendering this file) must not
+    // have their blob pulled out from under the <img>.
+    if ((refs.get(oldest) ?? 0) === 0) {
+      const old = cache.get(oldest)
+      if (old) URL.revokeObjectURL(old)
+    }
   }
   return url
 }
@@ -53,11 +82,23 @@ export function ImageViewer({ path, name, isActive }: { path: string; name: stri
     }
     setState({})
     let alive = true
+    let url: string | null = null
     urlFor(path)
-      .then((url) => alive && setState({ url }))
-      .catch((err) => alive && setState({ error: String(err) }))
+      .then((u) => {
+        if (alive) {
+          url = u
+          setState({ url: u })
+        } else {
+          // Resolved after the viewer moved on — drop the ref we took.
+          releaseRef(path, u)
+        }
+      })
+      .catch((err) => {
+        if (alive) setState({ error: String(err) })
+      })
     return () => {
       alive = false
+      if (url) releaseRef(path, url)
     }
   }, [path])
 

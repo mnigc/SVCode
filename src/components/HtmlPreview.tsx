@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { dirname } from '../lib/paths'
+import { useT } from '../lib/i18n'
 import { useViewerZoom } from '../lib/useViewerZoom'
 
 /** Viewer padding, kept in sync with .viewer-img-wrap. */
@@ -23,6 +24,7 @@ const PAD = 18
  * in the CSP's img/style/media/font-src (tauri.conf.json).
  */
 export function HtmlPreview({ text, path, isActive }: { text: string; path: string; isActive: boolean }) {
+  const t = useT()
   // The trailing slash is load-bearing: without it the whole encoded dir
   // path is the base URL's last segment, and relative refs would resolve
   // off the host root (`/assets/…`) instead of inside the file's directory.
@@ -71,7 +73,7 @@ export function HtmlPreview({ text, path, isActive }: { text: string; path: stri
         ref={frameRef}
         className="preview-html-frame viewer-img"
         sandbox="allow-same-origin"
-        title="HTML preview"
+        title={t('preview.htmlTitle')}
         srcDoc={srcDoc}
         style={
           scale !== null && docSize

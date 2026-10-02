@@ -108,8 +108,6 @@ async function prettierFormat(
   spec: { parser: string; plugins: PluginKey[] },
   range?: { from: number; to: number },
 ) {
-  const state = view.state
-  const text = state.doc.toString()
   try {
     const [prettier, plugins] = await Promise.all([
       getPrettier(),
@@ -120,48 +118,84 @@ async function prettierFormat(
       plugins: plugins as Plugin[],
       tabWidth: useSettings.getState().tabSize,
     }
-    if (range) {
-      // Range mode: cursorOffset doesn't combine with rangeStart/rangeEnd.
-      // Prettier leaves everything outside the range byte-identical, so
-      // splice just the reformatted piece back in and let CM map the
-      // selection through that single change.
-      const formatted = await prettier.format(text, {
-        ...options,
-        rangeStart: range.from,
-        rangeEnd: range.to,
-      })
+
+    // The chunk load (and prettier itself) can take seconds; the user keeps
+    // typing meanwhile. So: capture text + cursor, format, then dispatch ONLY
+    // if the view still holds exactly the captured text (and is alive). On a
+    // mismatch retry ONCE against the current text — the keystroke-storm
+    // debounce intent survives — then give up silently (a later explicit
+    // format covers it).
+    let text = view.state.doc.toString()
+    for (let attempt = 0; ; attempt++) {
+      // EditorView has no public "destroyed" flag; a detached DOM node is the
+      // reliable signal that the view (and its host) is gone.
+      if (!view.dom.isConnected) return
+      if (view.state.doc.toString() !== text) {
+        // Formatted a snapshot that no longer matches: re-capture and go
+        // again — but only once, to avoid chasing a moving document forever.
+        if (attempt > 0) return
+        text = view.state.doc.toString()
+        // A staled selection range is meaningless against the new text —
+        // recompute it from where the selection sits now (empty → whole doc).
+        range = undefined
+        const sel = view.state.selection.main
+        if (!sel.empty) range = { from: sel.from, to: sel.to }
+        continue
+      }
+      if (range) {
+        // Range mode: cursorOffset doesn't combine with rangeStart/rangeEnd.
+        // Prettier leaves everything outside the range byte-identical, so
+        // splice just the reformatted piece back in and let CM map the
+        // selection through that single change.
+        const formatted = await prettier.format(text, {
+          ...options,
+          rangeStart: range.from,
+          rangeEnd: range.to,
+        })
+        if (formatted === text) return
+        if (!view.dom.isConnected || view.state.doc.toString() !== text) {
+          if (attempt > 0) return
+          text = view.state.doc.toString()
+          continue
+        }
+        const rangeLen = formatted.length - text.length + (range.to - range.from)
+        view.dispatch({
+          changes: {
+            from: range.from,
+            to: range.to,
+            insert: formatted.slice(range.from, range.from + rangeLen),
+          },
+        })
+        return
+      }
+      // Multi-cursor collapses to the primary cursor — one whole-document
+      // replacement can only sensibly carry one position.
+      const head = view.state.selection.main.head
+      let formatted: string
+      let cursor: number
+      try {
+        const res = await prettier.formatWithCursor(text, { ...options, cursorOffset: head })
+        formatted = res.formatted
+        cursor = Math.min(res.cursorOffset, formatted.length)
+      } catch {
+        // The cursor marker is injected as a comment and some parsers choke on
+        // it; format without it and map the cursor by line/column instead.
+        formatted = await prettier.format(text, options)
+        const line = view.state.doc.lineAt(head)
+        cursor = offsetForLineCol(formatted, line.number, head - line.from)
+      }
       if (formatted === text) return
-      const rangeLen = formatted.length - text.length + (range.to - range.from)
+      if (!view.dom.isConnected || view.state.doc.toString() !== text) {
+        if (attempt > 0) return
+        text = view.state.doc.toString()
+        continue
+      }
       view.dispatch({
-        changes: {
-          from: range.from,
-          to: range.to,
-          insert: formatted.slice(range.from, range.from + rangeLen),
-        },
+        changes: { from: 0, to: text.length, insert: formatted },
+        selection: EditorSelection.cursor(cursor),
       })
       return
     }
-    // Multi-cursor collapses to the primary cursor — one whole-document
-    // replacement can only sensibly carry one position.
-    const head = state.selection.main.head
-    let formatted: string
-    let cursor: number
-    try {
-      const res = await prettier.formatWithCursor(text, { ...options, cursorOffset: head })
-      formatted = res.formatted
-      cursor = Math.min(res.cursorOffset, formatted.length)
-    } catch {
-      // The cursor marker is injected as a comment and some parsers choke on
-      // it; format without it and map the cursor by line/column instead.
-      formatted = await prettier.format(text, options)
-      const line = state.doc.lineAt(head)
-      cursor = offsetForLineCol(formatted, line.number, head - line.from)
-    }
-    if (formatted === text) return
-    view.dispatch({
-      changes: { from: 0, to: state.doc.length, insert: formatted },
-      selection: EditorSelection.cursor(cursor),
-    })
   } catch (err) {
     useWorkspace.setState({ notice: t('format.failed', { msg: shortError(err) }) })
   }

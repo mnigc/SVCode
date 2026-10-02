@@ -6,6 +6,7 @@ import { useT } from '../lib/i18n'
 import { DIR_ICON } from '../lib/fileIcons'
 import { basename } from '../lib/paths'
 import { scrollTreeRow } from '../lib/reveal'
+import { useDismiss } from '../lib/useDismiss'
 import { NodeIcon } from './NodeIcon'
 import { NodeMenu } from './NodeMenu'
 
@@ -22,6 +23,8 @@ export function QuickAccess() {
   const [open, setOpen] = useState(true)
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
   const [missing, setMissing] = useState<Set<string>>(new Set())
+  // Same outside-dismissal as the FileTree menu.
+  useDismiss(!!menu, () => setMenu(null), '.ctx-menu')
 
   // Probe each pinned path so deleted/unreachable folders render dimmed
   // instead of failing silently on click. Sequential is fine — the list is
@@ -40,23 +43,6 @@ export function QuickAccess() {
       alive = false
     }
   }, [pinned])
-
-  // Same outside-dismissal as the FileTree menu.
-  useEffect(() => {
-    if (!menu) return
-    const onPointerDown = (e: PointerEvent) => {
-      if (!(e.target instanceof Element) || !e.target.closest('.ctx-menu')) setMenu(null)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenu(null)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [menu])
 
   /** Expand the folder in the tree below, then bring its row into view so
    * deep pins visibly "locate" instead of changing state off-screen. */
@@ -85,6 +71,9 @@ export function QuickAccess() {
               }}
               onContextMenu={(e) => {
                 e.preventDefault()
+                // Pinned rows own their menu — don't let it also open the
+                // sidebar's blank-space menu.
+                e.stopPropagation()
                 setMenu({ x: e.clientX, y: e.clientY, path: p })
               }}
               title={gone ? `${p}\n${t('qa.missing')}` : p}

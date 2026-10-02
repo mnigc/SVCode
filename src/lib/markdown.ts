@@ -41,9 +41,31 @@ const ALLOWED_ATTRS = new Set([
   'rowspan', 'src', 'start', 'title', 'type', 'width',
 ])
 
-/** javascript:/vbscript:/data:text-html URLs never survive; img may keep data:image. */
+/**
+ * `id` stays allow-listed on purpose: markdown-it generates no heading ids
+ * itself, but the preview resolves user-written in-page anchors (`<a
+ * href="#x">` → openExternalSafe's `#` branch), which need the target's id
+ * from the raw HTML. What ids must NOT do is DOM-clobber — an element whose
+ * id shadows a property of window/document (`id="location"`, `id="forms"`,
+ * `id="name"`) replaces that global for every script in the page.
+ */
+function clobbersGlobal(id: string): boolean {
+  return (
+    Object.prototype.hasOwnProperty.call(window, id) ||
+    Object.prototype.hasOwnProperty.call(document, id)
+  )
+}
+
+/**
+ * javascript:/vbscript:/data:text-html URLs never survive; img may keep
+ * data:image. Protocol-relative URLs (`//host/x`) are rejected too: in the
+ * webview they inherit the app's origin and become an un-auditable
+ * cross-origin navigation target, while remote http(s) images (a feature)
+ * stay allowed.
+ */
 function isSafeUrl(value: string): boolean {
   const v = value.trim().toLowerCase()
+  if (v.startsWith('//')) return false
   if (v.startsWith('javascript:') || v.startsWith('vbscript:')) return false
   if (v.startsWith('data:') && !v.startsWith('data:image/')) return false
   return true
@@ -67,6 +89,10 @@ function sanitizeNode(root: ParentNode) {
         child.removeAttribute(attr.name)
         continue
       }
+      if (name === 'id' && clobbersGlobal(attr.value)) {
+        child.removeAttribute(attr.name)
+        continue
+      }
       if ((name === 'href' || name === 'src') && !isSafeUrl(attr.value)) {
         child.removeAttribute(attr.name)
       }
@@ -87,6 +113,10 @@ export function renderMarkdown(text: string): string {
 
 /** Slug-free heading ids are not needed; links stay external-safe. */
 export function openExternalSafe(root: HTMLElement) {
+  // MdPreview re-runs this effect (React strict mode / remounts) on the same
+  // root element; a second click listener would open the same link twice.
+  if (root.dataset.extLinksBound) return
+  root.dataset.extLinksBound = '1'
   root.addEventListener('click', (e) => {
     const a = (e.target as HTMLElement).closest('a')
     if (!a) return

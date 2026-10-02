@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useWorkspace } from '../store/workspace'
 import { useT } from '../lib/i18n'
-import { ZOOM_STEP, clampZoom } from '../lib/viewerZoom' 
+import { isModalOpen } from '../lib/isModalOpen'
+import { ZOOM_STEP, clampZoom } from '../lib/viewerZoom'
 
 /**
  * PDF preview via pdf.js, lazy-imported on first use (README decision #1).
@@ -64,6 +65,10 @@ export function PdfViewer({ path, isActive }: { path: string; isActive: boolean 
           canvas.height = Math.floor(viewport.height)
           canvas.className = 'pdf-page'
           canvas.dataset.page = String(n)
+          // Unclamped fit width in CSS px (canvas never renders wider than
+          // scale 4 device px would allow) — the resize refit below rescales
+          // CSS size against this ceiling without re-rendering.
+          canvas.dataset.maxW = String(Math.floor((base.width * 4) / window.devicePixelRatio))
           host!.appendChild(canvas)
           const ctx = canvas.getContext('2d')!
           await page.render({ canvasContext: ctx, viewport, canvas }).promise
@@ -104,6 +109,39 @@ export function PdfViewer({ path, isActive }: { path: string; isActive: boolean 
     })
   }, [zoom])
 
+  // Fit follows the pane: when the container resizes (splitter drag, window
+  // resize), recompute the fit width in CSS terms only — canvases stay at
+  // their original device-pixel resolution, which holds quality for any
+  // downscale and only softens when the pane grows well past the initial
+  // fit. Known limitation: every page stays in the DOM (no virtualization)
+  // — a few hundred pages cost real memory; deferred deliberately.
+  useEffect(() => {
+    const host = scroller.current
+    if (!host || typeof ResizeObserver === 'undefined') return
+    let lastW = host.clientWidth
+    const ro = new ResizeObserver(() => {
+      const w = host.clientWidth
+      // Ignore sub-pixel/shimmy changes; refit on real width deltas only.
+      if (w === lastW || Math.abs(w - lastW) < 2) return
+      lastW = w
+      const avail = Math.max(w - 24, 320)
+      host.querySelectorAll<HTMLCanvasElement>('.pdf-page').forEach((c) => {
+        const bw = Number(c.dataset.baseW)
+        const bh = Number(c.dataset.baseH)
+        if (!bw || !bh) return
+        const maxW = Number(c.dataset.maxW) || Infinity
+        const nb = Math.min(avail, maxW)
+        const nh = nb * (bh / bw)
+        c.dataset.baseW = String(nb)
+        c.dataset.baseH = String(nh)
+        c.style.width = `${nb * zoomRef.current}px`
+        c.style.height = `${nh * zoomRef.current}px`
+      })
+    })
+    ro.observe(host)
+    return () => ro.disconnect()
+  }, [])
+
   const zoomAt = (next: number, anchor?: { x: number; y: number }) => {
     const el = scroller.current
     const prev = zoomRef.current
@@ -143,6 +181,8 @@ export function PdfViewer({ path, isActive }: { path: string; isActive: boolean 
     const onKey = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.altKey || e.metaKey) return
       if (e.key !== '=' && e.key !== '+' && e.key !== '-' && e.key !== '0') return
+      // A modal dialog owns the screen — don't zoom behind it.
+      if (isModalOpen()) return
       e.preventDefault()
       zoomAt(
         e.key === '-' ? zoomRef.current / ZOOM_STEP : e.key === '0' ? 1 : zoomRef.current * ZOOM_STEP,

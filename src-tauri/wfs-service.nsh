@@ -76,6 +76,34 @@ Function WfsServiceRegister
   ${Loop}
 FunctionEnd
 
+; Grants interactive users the right to start the service. The default DACL
+; gives SERVICE_START only to SYSTEM and Administrators, so a stopped service
+; could never be brought up by the plain-user SVCode that needs it -- and
+; wfs.rs asks for exactly that, once per process, giving up silently on a
+; refusal. The installer is already elevated, so it widens the DACL once here.
+;
+; sdset replaces the whole DACL, so the standard default ACEs have to be
+; restated alongside the one we add -- `(A;;RP;;;IU)`: interactive users may
+; start (RP) the service, and nothing beyond that. The string is passed
+; unquoted on purpose: it has no spaces, and quotes are the trap documented at
+; the top of this file. Re-running it on every install is harmless and repairs
+; upgrades from versions that never granted the right.
+Function WfsServiceGrantUserStart
+  nsExec::ExecToStack 'sc.exe query ${WFS_SVC_NAME}'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    Return
+  ${EndIf}
+  nsExec::ExecToStack 'sc.exe sdset ${WFS_SVC_NAME} D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;RP;;;IU)(A;;CCLCSWLOCRRC;;;SU)'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    DetailPrint 'WFSearch: could not grant interactive users the right to start the service ($0): $1'
+    DetailPrint 'WFSearch: if the service is ever stopped, bring it back from an elevated terminal: sc start WFSearch'
+  ${EndIf}
+FunctionEnd
+
 Function WfsServiceInstall
   SetRegView 64
 
@@ -110,6 +138,11 @@ Function WfsServiceInstall
   ${If} $0 != 0
     Call WfsServiceRegister
   ${EndIf}
+
+  ; The service exists on both paths that reach here -- freshly registered or
+  ; ours from an earlier SVCode version. Only when the register loop gave up
+  ; does the guard inside skip the grant.
+  Call WfsServiceGrantUserStart
 
   ; The engine exits when 127.0.0.1:15100 is already taken, and the process
   ; that usually holds it is the plain-user sidecar an older SVCode spawned --

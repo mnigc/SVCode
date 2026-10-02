@@ -93,9 +93,8 @@ MFT + USN 日志建索引，百万级文件全量索引约 2 秒，增量实时�
 到 [**Releases**](https://github.com/mnigc/SVCode/releases/latest) 下载最新安装包 ——
 整个编辑器（含内置全盘搜索引擎）打包后只有几兆：
 
-- `SVCode_x.y.z_x64-setup.exe` — NSIS 安装程序，**约 4.4 MB**（推荐）
-- `SVCode_x.y.z_x64_en-US.msi` — MSI 安装包，**约 5.5 MB**（引擎被打进去两份：一份给应用目录，
-  一份给服务目录）
+- `SVCode_x.y.z_x64-setup.exe` — NSIS 安装程序，**约 4.4 MB**（唯一的安装包；负责注册搜索服务，
+  应用内自动更新装的也是它）
 
 要求：Windows 10 及以上（自带 WebView2 渲染）。
 
@@ -112,7 +111,7 @@ MFT + USN 日志建索引，百万级文件全量索引约 2 秒，增量实时�
 pnpm install
 pnpm fetch:wfs     # 拉取锁定版本的 WFSearch 引擎到 src-tauri/binaries（不入库）
 pnpm tauri dev     # 开发调试
-pnpm tauri build   # 打包（NSIS + MSI）
+pnpm tauri build   # 打包（NSIS）
 ```
 
 推 `v*` 标签（或在 Actions 页手动触发）会自动构建 Windows 安装包：打标签时发布到

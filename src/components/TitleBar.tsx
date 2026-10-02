@@ -24,8 +24,9 @@ interface MenuEntry {
 
 /** 刷新 = reload the whole webview. The session (open tabs, unsaved drafts,
  *  layout) is persisted first — restoreSession brings it all back on boot —
- *  so the reload is as safe as an app restart. */
-function reloadApp() {
+ *  so the reload is as safe as an app restart. Shared with the sidebar's
+ *  blank-space context menu. */
+export function reloadApp() {
   void saveSessionNow()
     .catch(() => {})
     .then(() => window.location.reload())
@@ -86,7 +87,8 @@ export function TitleBar() {
     }
   }, [openMenu])
 
-  const menus: Record<string, MenuEntry[]> = {    [t('menu.file')]: [
+  const menus: Record<string, MenuEntry[]> = {
+    [t('menu.file')]: [
       {
         label: t('menu.save'),
         hint: 'Ctrl+S',

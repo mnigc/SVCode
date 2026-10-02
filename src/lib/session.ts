@@ -41,6 +41,25 @@ export interface SessionData {
   previewRatio: number
 }
 
+let timer: ReturnType<typeof setTimeout> | null = null
+
+/** Debounced persist — call from anywhere state changes. */
+export function scheduleSessionSave() {
+  if (timer) clearTimeout(timer)
+  timer = setTimeout(() => {
+    timer = null
+    void saveSessionNow().catch(() => {})
+  }, SAVE_DEBOUNCE_MS)
+}
+
+/** Last payload actually written; an identical re-serialization (most ticks
+ * change nothing) skips the IPC write entirely. */
+let lastSerialized: string | null = null
+
+/** Drafts already warned about — one line per file per session, not one per
+ * debounced save tick while the tab stays open. */
+const warnedDrafts = new Set<string>()
+
 export async function saveSessionNow() {
   const s = useWorkspace.getState()
   const flat = flatGroups(s.rows)
@@ -50,10 +69,21 @@ export async function saveSessionNow() {
       view: s.groupView[gid] ?? 'both',
       tabs: s.tabs
         .filter((t) => t.group === gid && (t.kind === 'text' || t.kind === 'markdown'))
-        .map((t) => ({
-          path: t.path,
-          draft: t.dirty && t.text.length <= DRAFT_LIMIT ? t.text : undefined,
-        })),
+        .map((t) => {
+          const overLimit = t.dirty && t.text.length > DRAFT_LIMIT
+          if (overLimit && !warnedDrafts.has(t.path)) {
+            // Oversized drafts cannot be restored into the editor anyway;
+            // dropping them silently would read as data loss with no trace.
+            warnedDrafts.add(t.path)
+            console.warn(
+              `[session] draft of "${t.name}" exceeds the ${DRAFT_LIMIT}-char limit — it will not be restored`,
+            )
+          }
+          return {
+            path: t.path,
+            draft: t.dirty && !overLimit ? t.text : undefined,
+          }
+        }),
     })),
     activeGroup: flat.indexOf(s.activeGroup),
     layout: {
@@ -68,30 +98,82 @@ export async function saveSessionNow() {
     sidebarWidth: s.sidebarWidth,
     previewRatio: s.previewRatio,
   }
+  const serialized = JSON.stringify(data)
+  if (serialized === lastSerialized) return
   await kv('session.json').then((k) => k.set('session', data))
+  lastSerialized = serialized
 }
 
-let timer: ReturnType<typeof setTimeout> | null = null
+/** ---- Restore-time shape validation -------------------------------------
+ * The session file is data at rest: a truncated write, a schema drift or a
+ * hand-edited file must never reach the store half-parsed. Everything is
+ * checked up front and ONE bad element discards the whole session — a
+ * partial restore (half the tabs, a layout that disagrees) is worse than
+ * the default boot. The version migrations below run only after this gate.
+ */
+const isStr = (v: unknown): v is string => typeof v === 'string'
+const isOptStr = (v: unknown): v is string | undefined => v === undefined || typeof v === 'string'
 
-/** Debounced persist — call from anywhere state changes. */
-export function scheduleSessionSave() {
-  if (timer) clearTimeout(timer)
-  timer = setTimeout(() => {
-    timer = null
-    void saveSessionNow().catch(() => {})
-  }, SAVE_DEBOUNCE_MS)
+function isValidSessionTab(v: unknown): v is SessionTab {
+  if (typeof v !== 'object' || v === null) return false
+  const t = v as Record<string, unknown>
+  return isStr(t.path) && isOptStr(t.draft)
+}
+
+function isValidSessionGroup(v: unknown): v is SessionGroup {
+  if (typeof v !== 'object' || v === null) return false
+  const g = v as Record<string, unknown>
+  if (!Array.isArray(g.tabs) || !g.tabs.every(isValidSessionTab)) return false
+  if (g.active !== undefined && g.active !== null && !isStr(g.active)) return false
+  if (g.view !== undefined && g.view !== 'edit' && g.view !== 'preview' && g.view !== 'both')
+    return false
+  return g.preview === undefined || typeof g.preview === 'boolean'
+}
+
+export function isValidSessionData(data: unknown): data is SessionData {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) return false
+  const d = data as Record<string, unknown>
+  // active: string | null (per SessionData; tolerate absence in old files).
+  if (d.active !== undefined && d.active !== null && !isStr(d.active)) return false
+  // expanded drives the tree walk — must be all strings.
+  if (!Array.isArray(d.expanded) || !d.expanded.every(isStr)) return false
+  if (d.sidebarOpen !== undefined && typeof d.sidebarOpen !== 'boolean') return false
+  if (d.sidebarWidth !== undefined && typeof d.sidebarWidth !== 'number') return false
+  if (d.previewRatio !== undefined && typeof d.previewRatio !== 'number') return false
+  if (d.groups !== undefined) {
+    if (!Array.isArray(d.groups) || !d.groups.every(isValidSessionGroup)) return false
+  }
+  // Pre-groups format (one implicit group).
+  if (d.tabs !== undefined) {
+    if (!Array.isArray(d.tabs) || !d.tabs.every(isValidSessionTab)) return false
+  }
+  if (d.layout !== undefined) {
+    if (typeof d.layout !== 'object' || d.layout === null) return false
+    const l = d.layout as Record<string, unknown>
+    if (!Array.isArray(l.rowSizes) || !l.rowSizes.every((n) => typeof n === 'number')) return false
+    if (!Array.isArray(l.rowRatios) || !l.rowRatios.every((n) => typeof n === 'number'))
+      return false
+  }
+  return true
 }
 
 export async function restoreSession() {
   const data = await kv('session.json')
     .then((k) => k.get<SessionData>('session'))
     .catch(() => undefined)
-  if (!data) return
+  // Untrusted at-rest data: one bad shape discards the whole session.
+  if (!data || !isValidSessionData(data)) return
 
   const s = useWorkspace.getState()
   useWorkspace.setState({
     sidebarOpen: data.sidebarOpen ?? s.sidebarOpen,
-    sidebarWidth: data.sidebarWidth ?? s.sidebarWidth,
+    // A saved width equal to the OLD default (260) means the user never
+    // dragged the splitter — migrate it so the wider default (320) applies
+    // to existing sessions too instead of hiding behind the persisted value.
+    sidebarWidth:
+      data.sidebarWidth === undefined || data.sidebarWidth === 260
+        ? s.sidebarWidth
+        : data.sidebarWidth,
     // Old sessions may carry a px previewWidth; ignore it and fall back to
     // the default ratio rather than dividing by a stale container width.
     previewRatio:

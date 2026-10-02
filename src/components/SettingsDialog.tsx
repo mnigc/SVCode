@@ -1,5 +1,6 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { useT } from '../lib/i18n'
+import { useFocusTrap } from '../lib/useFocusTrap'
 import {
   useSettings,
   DEFAULT_SETTINGS,
@@ -16,6 +17,9 @@ import {
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useT()
   const s = useSettings()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // Focus the first control and keep Tab cycling inside the dialog.
+  useFocusTrap(dialogRef, open)
 
   useEffect(() => {
     if (!open) return
@@ -32,7 +36,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 
   return (
     <div className="about-backdrop" onClick={onClose}>
-      <div className="settings-dialog" role="dialog" aria-modal onClick={(e) => e.stopPropagation()}>
+      <div ref={dialogRef} className="settings-dialog" role="dialog" aria-modal onClick={(e) => e.stopPropagation()}>
         <div className="settings-title">{t('settings.title')}</div>
 
         <div className="settings-scroll">
@@ -227,11 +231,12 @@ function Stepper({
   max: number
   onChange: (v: number) => void
 }) {
+  const t = useT()
   return (
     <div className="set-stepper">
       <button
         className="set-stepper-btn"
-        aria-label="-"
+        aria-label={t('aria.decrease')}
         disabled={value <= min}
         onClick={() => onChange(value - 1)}
       >
@@ -240,7 +245,7 @@ function Stepper({
       <span className="set-stepper-val">{value}</span>
       <button
         className="set-stepper-btn"
-        aria-label="+"
+        aria-label={t('aria.increase')}
         disabled={value >= max}
         onClick={() => onChange(value + 1)}
       >

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
+import { invoke } from '@tauri-apps/api/core'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { TEXT_EXT_SIZE } from '../lib/paths'
 import { useT, tBackend } from '../lib/i18n'
 import { useWorkspace, type TabInfo } from '../store/workspace'
@@ -34,7 +35,7 @@ export function UnsupportedCard({
     try {
       await fn()
     } catch (err) {
-      useWorkspace.setState({ notice: t('card.openFailed', { msg: String(err) }) })
+      useWorkspace.setState({ notice: t('card.openFailed', { msg: tBackend(String(err)) }) })
     } finally {
       setBusy(null)
     }
@@ -83,7 +84,7 @@ export function UnsupportedCard({
             <button
               className="unsupported-btn is-primary"
               disabled={busy !== null}
-              onClick={() => void run('open', () => openPath(tab.path))}
+              onClick={() => void run('open', () => invoke('open_external', { path: tab.path }))}
             >
               {t('card.openWith')}
             </button>

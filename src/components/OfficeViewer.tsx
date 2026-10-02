@@ -5,6 +5,7 @@ import { useWorkspace } from '../store/workspace'
 import { extname } from '../lib/paths'
 import { useT } from '../lib/i18n'
 import { clampZoom } from '../lib/viewerZoom'
+import { isModalOpen } from '../lib/isModalOpen'
 import { parseXlsxInWorker } from '../lib/xlsxParse'
 import type { ParsedSheet } from '../lib/xlsxParse'
 import { XLSX_MAX_COLS, XLSX_MAX_ROWS } from '../lib/xlsxLimits'
@@ -121,6 +122,8 @@ function useCtrlWheelZoom(
     const onKey = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.altKey || e.metaKey) return
       if (e.key !== '=' && e.key !== '+' && e.key !== '-' && e.key !== '0') return
+      // A modal dialog owns the screen — don't zoom behind it.
+      if (isModalOpen()) return
       e.preventDefault()
       if (e.key === '0') {
         zoomAt(1, el)
@@ -249,6 +252,9 @@ function XlsxView({ path, isActive }: { path: string; isActive: boolean }) {
             </div>
           )}
           <div className="xlsx-scroll" ref={scroller}>
+            {/* SECURITY: sheet.html comes from SheetJS's sheet_to_html, whose
+            escaping of cell text is what stands between a crafted workbook and
+            script execution here. Re-verify its escaping when upgrading xlsx. */}
             <div className="xlsx-body" ref={bodyRef} dangerouslySetInnerHTML={{ __html: sheet.html }} />
           </div>
         </>

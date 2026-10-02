@@ -27,9 +27,14 @@ export const useQuickAccess = create<QuickAccessState>((set, get) => ({
   load: async () => {
     if (get().loaded) return
     const saved = await kv('pinned.json')
-      .then((k) => k.get<string[]>('pinned'))
+      .then((k) => k.get<unknown[]>('pinned'))
       .catch(() => undefined)
-    set({ pinned: Array.isArray(saved) ? saved : [], loaded: true })
+    // The KV file is data at rest: keep string entries only, drop blanks and
+    // duplicates — anything else would render as a broken row or double pin.
+    const pinned = Array.isArray(saved)
+      ? saved.filter((p): p is string => typeof p === 'string' && p.length > 0)
+      : []
+    set({ pinned: [...new Set(pinned)], loaded: true })
   },
   pin: (path) => {
     if (get().pinned.includes(path)) return

@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace } from '../store/workspace'
-import { SEARCH_LIMIT, useSearch, scopedQuery } from '../lib/search'
+import { SEARCH_LIMIT, useSearch, scopedQuery, contentTermsOf } from '../lib/search'
+import type { SearchHit } from '../lib/search'
 import { basename, dirname } from '../lib/paths'
 import { useT } from '../lib/i18n'
 import { scrollIntoContainer } from '../lib/scrollIntoContainer'
+import { isModalOpen } from '../lib/isModalOpen'
+import { useDismiss } from '../lib/useDismiss'
 import { DIR_ICON, fileIcon } from '../lib/fileIcons'
 import { NodeIcon } from './NodeIcon'
 import { NodeMenu } from './NodeMenu'
@@ -11,7 +14,13 @@ import { NodeMenu } from './NodeMenu'
 /** Input debounce — WFSearch answers in milliseconds, this only absorbs
  * keystroke storms. */
 const QUERY_DEBOUNCE_MS = 150
+/** Content scans read real files engine-side — they wait for a longer pause
+ * than the name search before firing, but they DO fire without the user
+ * visiting the 文档内容 tab, so its count stays live. */
+const CONTENT_DEBOUNCE_MS = 600
 const ROW_H = 26
+/** Content hits render two lines: the file row plus the snippet. */
+const SNIPPET_ROW_H = 42
 
 /** Sidebar search box. */
 export function SearchBox() {
@@ -19,6 +28,7 @@ export function SearchBox() {
   const query = useSearch((s) => s.query)
   const setQuery = useSearch((s) => s.setQuery)
   const runQuery = useSearch((s) => s.runQuery)
+  const runContentQuery = useSearch((s) => s.runContentQuery)
   const pendingScope = useSearch((s) => s.pendingScope)
   // Drive roots have an empty basename ("C:\") — prefer the tree node's
   // display name ("系统 (C:)"), falling back to the path itself.
@@ -27,27 +37,48 @@ export function SearchBox() {
     (pendingScope ? basename(pendingScope) || pendingScope : '')
   const input = useRef<HTMLInputElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const contentTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
+        // Another handler (CM keymap, dialogs) already claimed it; and while
+        // a modal dialog is open the focus must stay there.
+        if (e.defaultPrevented || isModalOpen()) return
         e.preventDefault()
         input.current?.focus()
         input.current?.select()
       }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    // Unmount clears pending debounces — a timer firing after the box is gone
+    // would run a query against stale state for nothing.
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      if (timer.current) clearTimeout(timer.current)
+      if (contentTimer.current) clearTimeout(contentTimer.current)
+    }
   }, [])
 
   const onChange = (value: string) => {
     setQuery(value)
     if (timer.current) clearTimeout(timer.current)
+    if (contentTimer.current) clearTimeout(contentTimer.current)
     if (!value.trim()) {
-      useSearch.setState({ results: [], truncated: false, tab: 'explorer' })
+      // runQuery('') is the single clear path: both result sets go, tab
+      // returns to the tree.
+      void runQuery('')
       return
     }
     timer.current = setTimeout(() => void runQuery(value), QUERY_DEBOUNCE_MS)
+    // The content tab's count stays live without a visit: scan on settle,
+    // but only when the query actually carries a word to search for.
+    if (contentTermsOf(value).length > 0) {
+      contentTimer.current = setTimeout(
+        () => void runContentQuery(value.trim()),
+        CONTENT_DEBOUNCE_MS,
+      )
+    }
   }
 
   return (
@@ -137,11 +168,16 @@ export function IndexStatus() {
   )
 }
 
-/** Flat results list, replacing the tree while a query is active. */
-export function SearchResults() {
+/** Flat results list for one sidebar tab: 'name' shows file-name hits,
+ * 'content' shows document-content hits with their snippet lines. */
+export function SearchResults({ mode }: { mode: 'name' | 'content' }) {
   const t = useT()
-  const results = useSearch((s) => s.results)
-  const truncated = useSearch((s) => s.truncated)
+  const isContent = mode === 'content'
+  const results = useSearch((s) => (isContent ? s.contentResults : s.results))
+  const truncated = useSearch((s) => (isContent ? s.contentTruncated : s.truncated))
+  const scanInfo = useSearch((s) => (isContent ? s.scanInfo : null))
+  const running = useSearch((s) => (isContent ? s.contentRunning : false))
+  const contentError = useSearch((s) => (isContent ? s.contentError : null))
   const query = useSearch((s) => s.query)
   const openFile = useWorkspace((s) => s.openFile)
   const revealPath = useWorkspace((s) => s.revealPath)
@@ -149,23 +185,17 @@ export function SearchResults() {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; isDir: boolean } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
+  // The needles are derived once per query: word tokens highlight the
+  // snippet, the rest (wildcards stripped) highlight the file name.
+  const { nameTerms, contentTerms } = useMemo(() => queryNeedles(query.trim()), [query])
+  // Fixed height per mode: content rows are always two lines tall, so hits
+  // without a snippet keep the same geometry as their neighbors (mixed
+  // result sets used to shift every row when the first snippet appeared).
+  const rowH = isContent ? SNIPPET_ROW_H : ROW_H
+
   useEffect(() => setSelected(0), [results])
 
-  useEffect(() => {
-    if (!menu) return
-    const onPointerDown = (e: PointerEvent) => {
-      if (!(e.target instanceof Element) || !e.target.closest('.ctx-menu')) setMenu(null)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenu(null)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [menu])
+  useDismiss(!!menu, () => setMenu(null), '.ctx-menu')
 
   useEffect(() => {
     const list = listRef.current
@@ -210,7 +240,9 @@ export function SearchResults() {
         selected={selected}
         onSelect={setSelected}
         onActivate={activate}
-        query={query.trim()}
+        nameTerms={nameTerms}
+        contentTerms={contentTerms}
+        rowH={rowH}
         onContextMenu={(hit, i, e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -228,33 +260,65 @@ export function SearchResults() {
           onClose={() => setMenu(null)}
         />
       )}
-      {results.length === 0 && (
-        <div className="tree-note search-empty">
-          {query.trim() ? t('search.noMatches') : t('search.typeToSearch')}
+      {results.length === 0 &&
+        (() => {
+          const note = isContent
+            ? contentError
+              ? contentError
+              : running
+              ? t('search.contentScanning')
+              : contentTermsOf(query.trim()).length
+                ? t('search.noMatches')
+                : t('search.contentNoTerm')
+            : query.trim()
+              ? t('search.noMatches')
+              : t('search.typeToSearch')
+          return (
+            <div className="tree-note search-empty" title={note}>
+              {note}
+            </div>
+          )
+        })()}
+      {scanInfo?.truncated && (
+        <div className="search-status" title={t('search.contentTruncated')}>
+          {t('search.contentTruncated')}
+        </div>
+      )}
+      {scanInfo?.timedOut && (
+        <div className="search-status" title={t('search.contentTimedOut')}>
+          {t('search.contentTimedOut')}
         </div>
       )}
       {truncated && (
-        <div className="search-status">{t('search.truncated', { n: SEARCH_LIMIT })}</div>
+        <div className="search-status" title={t('search.truncated', { n: SEARCH_LIMIT })}>
+          {t('search.truncated', { n: SEARCH_LIMIT })}
+        </div>
       )}
     </div>
   )
 }
 
-/** Fixed-height windowed list: only rows in view (± overscan) are mounted. */
+/** Fixed-height windowed list: only rows in view (± overscan) are mounted.
+ * All rows share one height per result set — name rows are single-line,
+ * content rows carry a snippet line. */
 function ListWindow({
   results,
   selected,
   onSelect,
   onActivate,
-  query,
+  nameTerms,
+  contentTerms,
+  rowH,
   onContextMenu,
 }: {
-  results: { path: string; name: string; isDir: boolean }[]
+  results: SearchHit[]
   selected: number
   onSelect: (i: number) => void
-  onActivate: (hit: { path: string; name: string; isDir: boolean }) => void
-  query: string
-  onContextMenu: (hit: { path: string; name: string; isDir: boolean }, i: number, e: React.MouseEvent) => void
+  onActivate: (hit: SearchHit) => void
+  nameTerms: string[]
+  contentTerms: string[]
+  rowH: number
+  onContextMenu: (hit: SearchHit, i: number, e: React.MouseEvent) => void
 }) {
   const scroller = useRef<HTMLDivElement>(null)
   const [range, setRange] = useState({ start: 0, end: 60 })
@@ -264,11 +328,11 @@ function ListWindow({
     () => () => {
       const el = scroller.current
       if (!el) return
-      const start = Math.max(0, Math.floor(el.scrollTop / ROW_H) - OVERSCAN)
-      const visible = Math.ceil(el.clientHeight / ROW_H) + OVERSCAN * 2
+      const start = Math.max(0, Math.floor(el.scrollTop / rowH) - OVERSCAN)
+      const visible = Math.ceil(el.clientHeight / rowH) + OVERSCAN * 2
       setRange({ start, end: start + visible })
     },
-    [],
+    [rowH],
   )
 
   useEffect(() => {
@@ -288,7 +352,7 @@ function ListWindow({
 
   return (
     <div ref={scroller} className="search-window" onScroll={recompute}>
-      <div style={{ height: results.length * ROW_H, position: 'relative' }}>
+      <div style={{ height: results.length * rowH, position: 'relative' }}>
         {results.slice(range.start, range.end).map((hit, k) => {
           const i = range.start + k
           return (
@@ -296,8 +360,8 @@ function ListWindow({
               key={hit.path}
               role="option"
               aria-selected={i === selected}
-              className={`search-row${i === selected ? ' is-selected' : ''}`}
-              style={{ top: i * ROW_H, height: ROW_H }}
+              className={`search-row${i === selected ? ' is-selected' : ''}${hit.snippet ? ' has-snip' : ''}`}
+              style={{ top: i * rowH, height: rowH }}
               title={hit.path}
               onClick={() => {
                 onSelect(i)
@@ -306,9 +370,19 @@ function ListWindow({
               onContextMenu={(e) => onContextMenu(hit, i, e)}
               onMouseEnter={() => onSelect(i)}
             >
-              <NodeIcon spec={hit.isDir ? DIR_ICON : fileIcon(hit.path)} />
-              <span className="search-name">{highlight(hit.name, query)}</span>
-              <span className="search-dir">{dirname(hit.path)}</span>
+              <div className="search-main">
+                <NodeIcon spec={hit.isDir ? DIR_ICON : fileIcon(hit.path)} />
+                <span className="search-name">{markHits(hit.name, nameTerms)}</span>
+                <span className="search-dir">{dirname(hit.path)}</span>
+              </div>
+              {hit.snippet && (
+                <div className="search-snip">
+                  <span className="snip-text">{markHits(hit.snippet, contentTerms)}</span>
+                  {(hit.contentMatches ?? 0) > 1 && (
+                    <span className="snip-hits">×{hit.contentMatches}</span>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}
@@ -317,14 +391,54 @@ function ListWindow({
   )
 }
 
-function highlight(name: string, query: string) {
-  const idx = query ? name.toLowerCase().indexOf(query.toLowerCase()) : -1
-  if (idx < 0) return name
-  return (
-    <>
-      {name.slice(0, idx)}
-      <mark>{name.slice(idx, idx + query.length)}</mark>
-      {name.slice(idx + query.length)}
-    </>
-  )
+/** Splits a query for highlighting: every token (wildcards stripped) is a
+ * file-name needle, and the word tokens — the ones the backend turns into
+ * `content:` terms — also highlight the snippet. */
+function queryNeedles(query: string): { nameTerms: string[]; contentTerms: string[] } {
+  const nameTerms = query
+    .split(/\s+/)
+    .map((t) => t.replace(/[*?]/g, ''))
+    .filter(Boolean)
+  return { nameTerms, contentTerms: contentTermsOf(query) }
+}
+
+/** Case-insensitive occurrences of every needle, merged into non-overlapping
+ * ranges ordered by position. */
+function matchRanges(text: string, needles: string[]): [number, number][] {
+  if (!needles.length) return []
+  const lower = text.toLowerCase()
+  const ranges: [number, number][] = []
+  for (const n of needles) {
+    const l = n.toLowerCase()
+    if (!l) continue
+    let i = lower.indexOf(l)
+    while (i !== -1) {
+      ranges.push([i, i + l.length])
+      i = lower.indexOf(l, i + l.length)
+    }
+  }
+  ranges.sort((a, b) => a[0] - b[0])
+  const merged: [number, number][] = []
+  for (const r of ranges) {
+    const last = merged[merged.length - 1]
+    if (last && r[0] < last[1]) last[1] = Math.max(last[1], r[1])
+    else merged.push(r)
+  }
+  return merged
+}
+
+/** Text with every needle occurrence wrapped in <mark>; plain text when
+ * nothing matches (e.g. a path-scope term against a file name). */
+function markHits(text: string, needles: string[]): React.ReactNode {
+  const ranges = matchRanges(text, needles)
+  if (!ranges.length) return text
+  const out: React.ReactNode[] = []
+  let pos = 0
+  for (const [s, e] of ranges) {
+    if (s > pos) out.push(text.slice(pos, s))
+    out.push(<mark key={s}>{text.slice(s, e)}</mark>)
+    pos = e
+  }
+  if (pos < text.length) out.push(text.slice(pos))
+  return out
 }

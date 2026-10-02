@@ -77,7 +77,9 @@ export function PreviewPane({ groupId }: { groupId: number }) {
     const url = URL.createObjectURL(new Blob([tab.text], { type: 'image/svg+xml' }))
     setSvgUrl(url)
     return () => URL.revokeObjectURL(url)
-  }, [tab?.path, tab?.text, tab?.kind, tab])
+    // Scalar deps only — depending on the `tab` object re-created the blob on
+    // every keystroke (any tab mutation, even an unrelated field).
+  }, [tab?.path, tab?.text, tab?.kind])
 
   return (
     <aside className="preview">

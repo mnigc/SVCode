@@ -5,7 +5,7 @@ use std::process::Command;
 /// a command.
 #[cfg(windows)]
 #[tauri::command]
-pub fn open_terminal(path: String) -> Result<(), String> {
+pub async fn open_terminal(path: String) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
 
     const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
@@ -24,6 +24,6 @@ pub fn open_terminal(path: String) -> Result<(), String> {
 
 #[cfg(not(windows))]
 #[tauri::command]
-pub fn open_terminal(_path: String) -> Result<(), String> {
+pub async fn open_terminal(_path: String) -> Result<(), String> {
     Err("当前平台暂不支持打开终端。".into())
 }

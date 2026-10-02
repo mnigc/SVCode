@@ -7,8 +7,14 @@ import { tags as t } from '@lezer/highlight'
  * in theme.css so one variable set drives the app, the editor and the preview
  * (decision #5 in the README). Values are `var(...)` strings, so switching
  * dark/light repaints the editor without rebuilding any extension.
+ *
+ * The `dark` flag must reflect the app's real theme (settings store →
+ * `<html data-theme>`): it decides which set of base-theme defaults
+ * CodeMirror ships (focused selection, tooltip colors, …). Call sites
+ * re-create this extension when the theme flips.
  */
-export const svcodeTheme = EditorView.theme(
+export function makeSvcodeTheme(dark: boolean) {
+  return EditorView.theme(
   {
     '&': {
       color: 'var(--cm-editor-fg)',
@@ -34,11 +40,11 @@ export const svcodeTheme = EditorView.theme(
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
       backgroundColor: 'var(--cm-selection)',
     },
-    // The editor is declared light (`dark: false` below), so CodeMirror's
-    // base theme ships a light focused-selection default whose selector —
-    // and specificity — beats the rule above, painting a pale lavender over
-    // the dark editor the moment it's focused (i.e. whenever the user
-    // selects). Mirror its exact selector so the tie breaks to the palette.
+    // The base theme ships a focused-selection default whose selector — and
+    // specificity — beats the shorter rule above, painting its own palette
+    // color over ours the moment the editor is focused (in EITHER mode —
+    // this is a specificity fix, not a dark-mode patch). Mirror its exact
+    // selector so the tie breaks to the palette variable.
     '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
       backgroundColor: 'var(--cm-selection)',
     },
@@ -280,8 +286,9 @@ export const svcodeTheme = EditorView.theme(
       padding: '6px 8px',
     },
   },
-  { dark: false },
-)
+  { dark },
+  )
+}
 
 /** Token colors: one variable per family, tuned per theme in theme.css. */
 const highlight = HighlightStyle.define([

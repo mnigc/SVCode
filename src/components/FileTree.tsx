@@ -6,9 +6,14 @@ import { useT, tBackend } from '../lib/i18n'
 import { NodeIcon } from './NodeIcon'
 import { basename, dirname, isRootPath, isUncShareRoot } from '../lib/paths'
 import { NodeMenu, useTreeEditing, openExternal, confirmDeleteNode } from './NodeMenu'
+import { useDismiss } from '../lib/useDismiss'
 
 /** How long the collapse animation runs before unmounting the rows. */
 const COLLAPSE_MS = 180
+
+/** Per-path in-flight dedup for hover access probes — mouseenter refires on
+ * every re-entry, the probe itself is async. */
+const probeInFlight = new Set<string>()
 
 /** Rows are laid out in visual order in one flat container, so document
  * order *is* tree order — the arrow keys just walk the visible `.tree-row`s
@@ -165,7 +170,13 @@ function TreeNode({ path, depth, ctx }: { path: string; depth: number; ctx: Tree
           e.stopPropagation()
           ctx.openMenu(path, e.clientX, e.clientY)
         }}
-        onMouseEnter={() => void probeAccess(path)}
+        onMouseEnter={() => {
+          // Only probe while the access state is undecided, and never twice
+          // at once for the same path.
+          if (node.access !== 'unknown' || probeInFlight.has(path)) return
+          probeInFlight.add(path)
+          void Promise.resolve(probeAccess(path)).finally(() => probeInFlight.delete(path))
+        }}
         title={
           node.error
             ? `${path}\n${tBackend(node.error)}`
@@ -202,7 +213,7 @@ function TreeNode({ path, depth, ctx }: { path: string; depth: number; ctx: Tree
           <div>
             {node.error && (
               <div className="tree-note" style={{ paddingLeft: indent + 25 }}>
-                {node.error}
+                {tBackend(node.error)}
               </div>
             )}
             {editing && editing.parent === path && editing.kind !== 'rename' && (
@@ -270,6 +281,8 @@ function InlineInput({
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         e.stopPropagation()
+        // IME composition: Enter/Escape belong to the IME until it settles.
+        if (e.nativeEvent.isComposing) return
         if (e.key === 'Enter') onCommit(value.trim())
         else if (e.key === 'Escape') onCancel()
       }}
@@ -286,22 +299,7 @@ export function FileTree() {
   const rootError = useWorkspace((s) => s.rootError)
   const netLocs = useSettings((s) => s.netLocations)
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
-
-  useEffect(() => {
-    if (!menu) return
-    const onPointerDown = (e: PointerEvent) => {
-      if (!(e.target instanceof Element) || !e.target.closest('.ctx-menu')) setMenu(null)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenu(null)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [menu])
+  useDismiss(!!menu, () => setMenu(null), '.ctx-menu')
 
   // Tree clipboard/rename/delete shortcuts. The target is the row holding DOM
   // focus, so the editor keeps its own Ctrl+C/X/V and Delete: a copy picked in

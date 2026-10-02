@@ -13,17 +13,28 @@
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
+
+// Locks here are tolerated on poisoning (`unwrap_or_else(|p| p.into_inner())`):
+// the app builds with panic=abort, so a poisoned mutex means a thread already
+// panicked — crashing the whole process instead of limping on buys nothing,
+// and the guarded state (sets of paths, a watcher handle) stays coherent
+// enough to keep watching.
 
 pub struct WatchState {
     watcher: Mutex<RecommendedWatcher>,
     /// Watched path → owner count. Keys are the exact strings callers passed
     /// to `watch_dir`, so every unwatch must reuse the same casing.
     roots: Arc<Mutex<HashMap<PathBuf, usize>>>,
+    /// Roots that lost their OS watch (watched dir deleted, notify errored).
+    /// The OS watch never recovers on its own, so a delete + external
+    /// recreate would leave the tree deaf forever; `watch_dir` re-arms roots
+    /// in this set instead of taking the refcount fast path.
+    dead: Arc<Mutex<HashSet<PathBuf>>>,
 }
 
 /// Payload of the debounced `fs:change` event: `dirs` are watched roots with
@@ -42,51 +53,77 @@ struct FsChanges {
 /// can emit several events).
 pub fn init(app: &AppHandle) -> WatchState {
     let roots: Arc<Mutex<HashMap<PathBuf, usize>>> = Arc::new(Mutex::new(HashMap::new()));
-    let dirty: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-    let files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+    let dirty: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
+    let files: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
+    let dead: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
 
     let event_roots = roots.clone();
     let event_dirty = dirty.clone();
     let event_files = files.clone();
-    let watcher = notify::recommended_watcher(
-        move |res: Result<notify::Event, notify::Error>| {
-            let Ok(event) = res else { return };
-            let Ok(roots) = event_roots.lock() else { return };
-            let mut dirty = event_dirty.lock().unwrap();
-            let mut files = event_files.lock().unwrap();
-            for path in &event.paths {
-                if !files.contains(path) {
-                    files.push(path.clone());
-                }
-                for root in roots.keys() {
-                    if path.starts_with(root) && !dirty.contains(root) {
-                        dirty.push(root.clone());
+    let event_dead = dead.clone();
+    let watcher =
+        notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| match res {
+            Ok(event) => {
+                let roots = event_roots.lock().unwrap_or_else(|p| p.into_inner());
+                let mut dirty = event_dirty.lock().unwrap_or_else(|p| p.into_inner());
+                let mut files = event_files.lock().unwrap_or_else(|p| p.into_inner());
+                for path in &event.paths {
+                    files.insert(path.clone());
+                    for root in roots.keys() {
+                        if path.starts_with(root) {
+                            dirty.insert(root.clone());
+                        }
                     }
                 }
             }
-        },
-    )
-    .expect("failed to create file-system watcher");
+            Err(e) => {
+                // A watched dir that got deleted kills its OS watch for good;
+                // without this the delete + external recreate case above would
+                // never see new events again. notify does not always attach the
+                // failed path, in which case every root is treated as suspect —
+                // re-watching a live root is harmless, staying deaf is not.
+                let roots = event_roots.lock().unwrap_or_else(|p| p.into_inner());
+                let mut dead = event_dead.lock().unwrap_or_else(|p| p.into_inner());
+                if e.paths.is_empty() {
+                    eprintln!(
+                        "watcher: error without path info, marking all roots for re-watch: {e}"
+                    );
+                    dead.extend(roots.keys().cloned());
+                } else {
+                    for p in &e.paths {
+                        for root in roots.keys() {
+                            if p.starts_with(root) && dead.insert(root.clone()) {
+                                eprintln!(
+                                    "watcher: root {} lost its watch ({}), marked for re-watch",
+                                    root.display(),
+                                    e
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        .expect("failed to create file-system watcher");
 
     let flush_dirty = dirty.clone();
     let flush_files = files.clone();
     let flush_app = app.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_millis(400));
-        let drained: Vec<PathBuf> = std::mem::take(&mut *flush_dirty.lock().unwrap());
-        let touched: Vec<PathBuf> = std::mem::take(&mut *flush_files.lock().unwrap());
+        let drained: HashSet<PathBuf> =
+            std::mem::take(&mut *flush_dirty.lock().unwrap_or_else(|p| p.into_inner()));
+        let touched: HashSet<PathBuf> =
+            std::mem::take(&mut *flush_files.lock().unwrap_or_else(|p| p.into_inner()));
         if !drained.is_empty() || !touched.is_empty() {
-            let to_str = |paths: &[PathBuf]| {
-                paths
-                    .iter()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .collect::<Vec<_>>()
-            };
+            fn to_str(paths: impl Iterator<Item = PathBuf>) -> Vec<String> {
+                paths.map(|p| p.to_string_lossy().into_owned()).collect()
+            }
             let _ = flush_app.emit(
                 "fs:change",
                 &FsChanges {
-                    dirs: to_str(&drained),
-                    files: to_str(&touched),
+                    dirs: to_str(drained.into_iter()),
+                    files: to_str(touched.into_iter()),
                 },
             );
         }
@@ -95,30 +132,53 @@ pub fn init(app: &AppHandle) -> WatchState {
     WatchState {
         watcher: Mutex::new(watcher),
         roots,
+        dead,
     }
 }
 
 #[tauri::command]
 pub fn watch_dir(state: State<'_, WatchState>, path: String) -> Result<(), String> {
-    let mut roots = state.roots.lock().unwrap();
-    if let Some(count) = roots.get_mut(Path::new(&path)) {
+    let key = PathBuf::from(&path);
+    let mut roots = state.roots.lock().unwrap_or_else(|p| p.into_inner());
+    let mut dead = state.dead.lock().unwrap_or_else(|p| p.into_inner());
+    let known = roots.contains_key(&key);
+    let was_dead = dead.remove(&key);
+    if known && !was_dead {
         // Already OS-watched for another owner — just take a reference.
-        *count += 1;
+        *roots.get_mut(&key).expect("checked above") += 1;
         return Ok(());
     }
-    roots.insert(PathBuf::from(&path), 1);
-    let mut watcher = state.watcher.lock().unwrap();
-    if let Err(err) = watcher.watch(Path::new(&path), RecursiveMode::NonRecursive) {
-        roots.remove(Path::new(&path));
-        return Err(err.to_string());
+    // New root, or a root that lost its OS watch (deleted then recreated
+    // externally): (re-)arm the OS watch.
+    if !known {
+        roots.insert(key.clone(), 1);
+    }
+    let mut watcher = state.watcher.lock().unwrap_or_else(|p| p.into_inner());
+    let mut res = watcher.watch(Path::new(&path), RecursiveMode::NonRecursive);
+    if res.is_err() {
+        // The stale registration from before the delete may still be on
+        // notify's books; drop it first. For a live root the watch call
+        // itself is idempotent, so this retry only fires on real trouble.
+        let _ = watcher.unwatch(Path::new(&path));
+        res = watcher.watch(Path::new(&path), RecursiveMode::NonRecursive);
+    }
+    if let Err(e) = res {
+        if !known {
+            roots.remove(&key);
+        }
+        if was_dead {
+            dead.insert(key);
+        }
+        return Err(e.to_string());
     }
     Ok(())
 }
 
 #[tauri::command]
 pub fn unwatch_dir(state: State<'_, WatchState>, path: String) -> Result<(), String> {
-    let mut roots = state.roots.lock().unwrap();
-    let drop_watch = match roots.get_mut(Path::new(&path)) {
+    let key = PathBuf::from(&path);
+    let mut roots = state.roots.lock().unwrap_or_else(|p| p.into_inner());
+    let drop_watch = match roots.get_mut(&key) {
         Some(count) => {
             *count -= 1;
             *count == 0
@@ -127,8 +187,14 @@ pub fn unwatch_dir(state: State<'_, WatchState>, path: String) -> Result<(), Str
         None => false,
     };
     if drop_watch {
-        roots.remove(Path::new(&path));
-        let mut watcher = state.watcher.lock().unwrap();
+        roots.remove(&key);
+        // The root is fully released: no need to remember it was deaf.
+        state
+            .dead
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&key);
+        let mut watcher = state.watcher.lock().unwrap_or_else(|p| p.into_inner());
         let _ = watcher.unwatch(Path::new(&path));
     }
     Ok(())

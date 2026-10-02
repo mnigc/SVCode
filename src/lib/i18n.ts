@@ -127,7 +127,7 @@ const dict = {
   'group.max': { zh: '最多支持 {n} 个编辑器分组', en: 'Up to {n} editor groups' },
   'tab.closeOthers': { zh: '关闭其他标签页', en: 'Close Other Tabs' },
   'tab.closeRight': { zh: '关闭右侧标签页', en: 'Close Tabs to the Right' },
-  'tab.closeAll': { zh: '关闭全部标签页', en: 'Close All Tabs' },
+  'tab.closeAll': { zh: '关闭本组标签页', en: 'Close Tabs in This Group' },
 
   // status bar
   'status.thisPC': { zh: '此电脑', en: 'This PC' },
@@ -149,11 +149,15 @@ const dict = {
 
   // sidebar
   'sidebar.explorer': { zh: '资源管理器', en: 'Explorer' },
-  'sidebar.searchTab': { zh: '搜索结果', en: 'Search' },
+  'sidebar.nameTab': { zh: '文件名', en: 'Files' },
+  'sidebar.contentTab': { zh: '文档内容', en: 'Contents' },
   'sidebar.quickAccess': { zh: '快速访问', en: 'Quick Access' },
 
   // search
-  'search.placeholder': { zh: '搜索文件名 (Ctrl+E)', en: 'Search file names (Ctrl+E)' },
+  'search.placeholder': {
+    zh: '搜索文件名、文档内容 (Ctrl+E)',
+    en: 'Search file names & contents (Ctrl+E)',
+  },
   'search.placeholderScope': { zh: '搜索「{name}」里的文件', en: 'Search inside "{name}"' },
   'search.clear': { zh: '清空', en: 'Clear' },
   'search.viaWfs': { zh: '由内置 WFSearch 引擎提供', en: 'Powered by the built-in WFSearch engine' },
@@ -169,6 +173,22 @@ const dict = {
   'search.truncated': {
     zh: '仅显示前 {n} 条，输入更多字符缩小范围',
     en: 'Showing first {n} results; type more to narrow down',
+  },
+  'search.contentScanning': {
+    zh: '正在扫描文档内容…',
+    en: 'Scanning document contents…',
+  },
+  'search.contentNoTerm': {
+    zh: '输入关键词后扫描文档内容；路径条件的最后一段也会当作关键词',
+    en: 'Type a keyword to scan document contents — the last path segment counts as one',
+  },
+  'search.contentTruncated': {
+    zh: '内容扫描的候选窗口已用尽，结果可能不全；试试加文件名条件缩小范围',
+    en: 'Content-scan candidate window exhausted — add file-name terms for full coverage',
+  },
+  'search.contentTimedOut': {
+    zh: '内容扫描超时，结果不完整',
+    en: 'Content scan timed out; results are partial',
   },
 
   // welcome screen
@@ -211,6 +231,11 @@ const dict = {
   'viewmode.preview': { zh: '仅预览', en: 'Preview only' },
   'preview.close': { zh: '关闭预览 (Ctrl+Shift+V)', en: 'Close preview (Ctrl+Shift+V)' },
   'preview.empty': { zh: '打开一个文件后这里会显示预览。', en: 'Open a file to see its preview here.' },
+  'preview.htmlTitle': { zh: 'HTML 预览', en: 'HTML preview' },
+
+  // accessibility-only labels (not shown as visible text)
+  'aria.decrease': { zh: '减小', en: 'Decrease' },
+  'aria.increase': { zh: '增大', en: 'Increase' },
 
   // file tree
   'tree.noAccess': { zh: '没有访问权限', en: 'Access denied' },
@@ -379,6 +404,14 @@ const dict = {
     zh: '内容包含 {msg} 无法表示的字符，未保存。请改用“另存为 UTF-8”。',
     en: 'Content contains characters {msg} cannot represent; not saved. Use “Save as UTF-8” instead.',
   },
+  'err.externallyModified': {
+    zh: '文件已被外部程序修改，保存已取消，请重新加载',
+    en: 'The file was modified by another program. Save cancelled — reload the file.',
+  },
+  'err.executableOpen': {
+    zh: '为安全起见，不能直接打开可执行文件',
+    en: "For safety, executable files can't be opened directly.",
+  },
 } satisfies Record<string, { zh: string; en: string }>
 
 export type TextKey = keyof typeof dict
@@ -471,6 +504,8 @@ const BACKEND_EXACT: Partial<Record<string, TextKey>> = {
   不支持移动该类型: 'err.cantMove',
   '这是二进制文件，无法以文本打开，请用外部程序。': 'err.binaryFile',
   没有访问权限: 'tree.noAccess',
+  '文件已被外部程序修改，保存已取消，请重新加载': 'err.externallyModified',
+  '为安全起见，不能直接打开可执行文件': 'err.executableOpen',
 }
 
 const BACKEND_TEMPLATES: [string, TextKey, string?][] = [

@@ -2,6 +2,7 @@ use serde::Serialize;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Above this a text file opens read-only; the editor is not built for huge files.
@@ -44,6 +45,9 @@ pub struct TextContent {
     pub eol: String,
     pub size: u64,
     pub read_only: bool,
+    /// Modified 时间（Unix 毫秒）。保存时由前端原样带回 `expectedMtimeMs`，
+    /// 这样外部程序在我们打开文件之后的修改不会被一次保存静默覆盖。
+    pub mtime_ms: u64,
 }
 
 fn err<E: std::fmt::Display>(e: E) -> String {
@@ -69,7 +73,7 @@ fn is_hidden(entry: &fs::DirEntry) -> bool {
 }
 
 #[tauri::command]
-pub fn list_dir(path: String) -> Result<Vec<Entry>, String> {
+pub async fn list_dir(path: String) -> Result<Vec<Entry>, String> {
     let read = fs::read_dir(&path).map_err(err)?;
     let mut out = Vec::new();
     for entry in read.flatten() {
@@ -86,15 +90,16 @@ pub fn list_dir(path: String) -> Result<Vec<Entry>, String> {
         });
     }
     out.sort_by(|a, b| {
-        (b.is_dir.cmp(&a.is_dir))
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        (b.is_dir.cmp(&a.is_dir)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     Ok(out)
 }
 
 #[tauri::command]
-pub fn read_text(path: String) -> Result<TextContent, String> {
-    let size = fs::metadata(&path).map_err(err)?.len();
+pub async fn read_text(path: String) -> Result<TextContent, String> {
+    let md = fs::symlink_metadata(&path).map_err(err)?;
+    let size = md.len();
+    let mtime_ms = md.modified().ok().map(ms_since_epoch_u64).unwrap_or(0);
     if size > REFUSE_BYTES {
         return Err("文件超过 20MB，请用外部程序打开。".into());
     }
@@ -106,6 +111,7 @@ pub fn read_text(path: String) -> Result<TextContent, String> {
         eol,
         size,
         read_only: size > READ_ONLY_BYTES,
+        mtime_ms,
     })
 }
 
@@ -121,6 +127,15 @@ pub struct FileTimes {
 fn ms_since_epoch(t: SystemTime) -> i64 {
     t.duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Same as `ms_since_epoch` but unsigned — the wire format for `mtime_ms`
+/// (an mtime cannot precede the epoch in practice, and a negative u64 field
+/// would trip serde).
+fn ms_since_epoch_u64(t: SystemTime) -> u64 {
+    t.duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
 }
 
@@ -142,14 +157,39 @@ fn decode_text(bytes: &[u8]) -> Result<(String, String, String), String> {
     // Sniff on the decoded text, not the raw bytes: in UTF-16 a CRLF is
     // `0D 00 0A 00`, so byte-level detection never fires for those files.
     let crlf = text.contains("\r\n");
-    let text = if crlf { text.replace("\r\n", "\n") } else { text };
+    let text = if crlf {
+        text.replace("\r\n", "\n")
+    } else {
+        text
+    };
     Ok((text, encoding, if crlf { "crlf" } else { "lf" }.into()))
 }
 
 /// Returns the on-disk size in bytes after the write, so the UI's file-size
 /// readout stays exact (the encoding may expand or shrink the text).
+///
+/// `expected_mtime_ms`（read_text 报告的 `mtimeMs`）非 None 时，落盘前先核对
+/// 文件当前 mtime：不一致说明外部程序改过文件，直接拒绝保存而不是静默覆盖。
+/// 这同样是 check-then-act 的尽力而为检查，无法消除竞态窗口，但能挡住
+/// 常见的"文件在外部被改后一按保存就丢改动"。
 #[tauri::command]
-pub fn write_text(path: String, text: String, encoding: String, eol: String) -> Result<u64, String> {
+pub async fn write_text(
+    path: String,
+    text: String,
+    encoding: String,
+    eol: String,
+    expected_mtime_ms: Option<u64>,
+) -> Result<u64, String> {
+    if let Some(expected) = expected_mtime_ms {
+        let current = fs::symlink_metadata(&path)
+            .ok()
+            .and_then(|md| md.modified().ok())
+            .map(ms_since_epoch_u64)
+            .unwrap_or(0);
+        if current != expected {
+            return Err("文件已被外部程序修改，保存已取消，请重新加载".into());
+        }
+    }
     let text = if eol == "crlf" {
         &text.replace("\r\n", "\n").replace('\n', "\r\n")
     } else {
@@ -157,14 +197,23 @@ pub fn write_text(path: String, text: String, encoding: String, eol: String) -> 
     };
     let bytes = encode(text, &encoding)?;
     // Write-then-rename so a crash mid-write cannot leave a truncated file.
+    // The temp name carries pid + a process-wide counter: two saves racing on
+    // the same target (double invoke, two windows) must not share one tmp file
+    // and truncate each other mid-write.
+    static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
     let tmp = {
         let file_name = Path::new(&path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
+        let unique = format!(
+            ".{file_name}.{}.{}.svcode-tmp",
+            std::process::id(),
+            TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+        );
         Path::new(&path)
             .parent()
-            .map(|p| p.join(format!(".{file_name}.svcode-tmp")))
+            .map(|p| p.join(unique))
             .ok_or_else(|| "无效路径".to_string())?
     };
     // sync_all (not just flush) so the bytes reach the disk before the rename —
@@ -196,7 +245,7 @@ const BINARY_REFUSE_BYTES: u64 = 200 * 1024 * 1024;
 /// in a blob URL. Returns Tauri's raw IPC response so the payload stays bytes
 /// instead of going through JSON.
 #[tauri::command]
-pub fn read_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+pub async fn read_bytes(path: String) -> Result<tauri::ipc::Response, String> {
     let size = fs::metadata(&path).map_err(err)?.len();
     if size > BINARY_REFUSE_BYTES {
         return Err("文件超过 200MB，请用外部程序打开。".into());
@@ -210,7 +259,7 @@ pub fn read_bytes(path: String) -> Result<tauri::ipc::Response, String> {
 /// Cheap readability probe for the tree's hover hint: true when the directory
 /// can be opened and iterated (an empty-but-readable dir also passes).
 #[tauri::command]
-pub fn check_access(path: String) -> bool {
+pub async fn check_access(path: String) -> bool {
     match fs::read_dir(&path) {
         Ok(mut rd) => matches!(rd.next(), None | Some(Ok(_))),
         Err(_) => false,
@@ -225,6 +274,11 @@ fn valid_name(name: &str) -> Result<(), String> {
     if name.len() > 255 {
         return Err("名称过长".into());
     }
+    if name.chars().any(|c| ('\u{01}'..='\u{1F}').contains(&c)) {
+        // 0x00 never reaches here (cannot appear in a JS-provided path string
+        // that the OS would accept anyway); 0x01–0x1F are rejected by NTFS.
+        return Err("名称不能包含控制字符".into());
+    }
     const BAD: [char; 9] = ['\\', '/', ':', '*', '?', '"', '<', '>', '|'];
     if let Some(c) = name.chars().find(|c| BAD.contains(c)) {
         return Err(format!("名称不能包含 {c}"));
@@ -233,10 +287,13 @@ fn valid_name(name: &str) -> Result<(), String> {
         return Err("名称不能以点或空格结尾".into());
     }
     const RESERVED: [&str; 22] = [
-        "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7",
-        "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+        "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
+        "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
     ];
-    if RESERVED.iter().any(|r| name.eq_ignore_ascii_case(r)) {
+    // Windows reserves the STEM: `con.txt` creates a device-backed file just
+    // as `con` does, so match the part before the first dot, not the whole name.
+    let stem = name.split('.').next().unwrap_or(name);
+    if RESERVED.iter().any(|r| stem.eq_ignore_ascii_case(r)) {
         return Err("该名称是系统保留名".into());
     }
     Ok(())
@@ -252,13 +309,17 @@ fn file_name_of(path: &str) -> Result<String, String> {
 #[tauri::command]
 pub fn create_file(path: String) -> Result<(), String> {
     valid_name(&file_name_of(&path)?)?;
-    fs::OpenOptions::new().write(true).create_new(true).open(&path).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::AlreadyExists {
-            "同名文件已存在".into()
-        } else {
-            err(e)
-        }
-    })?;
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                "同名文件已存在".into()
+            } else {
+                err(e)
+            }
+        })?;
     Ok(())
 }
 
@@ -275,10 +336,15 @@ pub fn create_dir(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn rename_path(old_path: String, new_path: String) -> Result<(), String> {
+pub async fn rename_path(old_path: String, new_path: String) -> Result<(), String> {
     valid_name(&file_name_of(&new_path)?)?;
     // std::fs::rename uses MoveFileEx with REPLACE_EXISTING on Windows, which
-    // would silently clobber the target file — refuse instead.
+    // would silently clobber the target file — refuse instead. NOTE: this is a
+    // check-then-act probe, not an atomic no-replace rename (std cannot do
+    // one), so a tiny TOCTOU window remains: a file created at `new_path` by
+    // an external writer between the probe and the rename is still clobbered.
+    // Documented honestly rather than papered over; the same caveat applies to
+    // move_path's copy+delete fallback below.
     if fs::symlink_metadata(&new_path).is_ok() {
         return Err("目标名称已存在".into());
     }
@@ -290,7 +356,7 @@ pub fn rename_path(old_path: String, new_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn delete_path(path: String, recursive: bool) -> Result<(), String> {
+pub async fn delete_path(path: String, recursive: bool) -> Result<(), String> {
     let meta = fs::symlink_metadata(&path).map_err(err)?;
     if meta.is_dir() {
         if recursive {
@@ -323,7 +389,14 @@ fn copy_dir(src: &Path, dest: &Path) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn copy_path(src: String, dest: String) -> Result<(), String> {
+pub async fn copy_path(src: String, dest: String) -> Result<(), String> {
+    // Refuse to clobber: fs::copy would overwrite an existing file and
+    // copy_dir's create_dir_all would silently merge into an existing dir.
+    // Same conservative no-overwrite stance as rename/move (no overwrite flag
+    // on purpose — the frontend must decide explicitly via delete+copy).
+    if fs::symlink_metadata(&dest).is_ok() {
+        return Err("目标名称已存在".into());
+    }
     let meta = fs::symlink_metadata(&src).map_err(err)?;
     if meta.is_dir() {
         copy_dir(Path::new(&src), Path::new(&dest))
@@ -336,15 +409,28 @@ pub fn copy_path(src: String, dest: String) -> Result<(), String> {
 
 /// Move = rename when possible (same volume), copy+delete otherwise.
 #[tauri::command]
-pub fn move_path(src: String, dest: String) -> Result<(), String> {
+pub async fn move_path(src: String, dest: String) -> Result<(), String> {
+    // Same no-clobber guard as rename_path: rename's REPLACE_EXISTING and the
+    // copy+delete fallback below would both silently overwrite dest.
+    if fs::symlink_metadata(&dest).is_ok() {
+        return Err("目标名称已存在".into());
+    }
     if fs::rename(&src, &dest).is_ok() {
         return Ok(());
     }
     let meta = fs::symlink_metadata(&src).map_err(err)?;
     if meta.is_dir() {
+        // Re-check before the fallback: dest may have appeared between the
+        // first probe and a failed (e.g. cross-volume) rename.
+        if fs::symlink_metadata(&dest).is_ok() {
+            return Err("目标名称已存在".into());
+        }
         copy_dir(Path::new(&src), Path::new(&dest))?;
         fs::remove_dir_all(&src).map_err(err)
     } else if meta.is_file() {
+        if fs::symlink_metadata(&dest).is_ok() {
+            return Err("目标名称已存在".into());
+        }
         fs::copy(&src, &dest).map_err(err)?;
         fs::remove_file(&src).map_err(err)
     } else {
@@ -371,8 +457,12 @@ fn has_gb18030_quad(bytes: &[u8]) -> bool {
     false
 }
 
-fn decode(bytes: &[u8]) -> Result<(String, String), String> {    if let Some(rest) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
-        return Ok((String::from_utf8_lossy(rest).into_owned(), "utf-8-bom".into()));
+fn decode(bytes: &[u8]) -> Result<(String, String), String> {
+    if let Some(rest) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
+        return Ok((
+            String::from_utf8_lossy(rest).into_owned(),
+            "utf-8-bom".into(),
+        ));
     }
     if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
         return Ok((decode_utf16(rest, false), "utf-16le".into()));
@@ -390,13 +480,16 @@ fn decode(bytes: &[u8]) -> Result<(String, String), String> {    if let Some(res
         return Ok((s.to_owned(), "utf-8".into()));
     }
     // Chinese Windows puts a lot of plain text in GBK; try it before anything lossy.
-    if let Some(cow) = encoding_rs::GBK.decode_without_bom_handling_and_without_replacement(bytes)
-    {
+    if let Some(cow) = encoding_rs::GBK.decode_without_bom_handling_and_without_replacement(bytes) {
         // encoding_rs's GBK decoder also accepts GB18030 4-byte sequences,
         // but its GBK encoder cannot produce them — such a file would open
         // fine and then refuse to save. Label those gb18030 (plain GBK
         // content encodes byte-identically under either).
-        let label = if has_gb18030_quad(bytes) { "gb18030" } else { "gbk" };
+        let label = if has_gb18030_quad(bytes) {
+            "gb18030"
+        } else {
+            "gbk"
+        };
         return Ok((cow.into_owned(), label.into()));
     }
     // Remaining strict attempts (no replacement) so a decodable file is never
@@ -552,7 +645,10 @@ pub fn drive_roots_blocking() -> Vec<Drive> {
         }
         .ok()
         .map(|_| {
-            let end = label_buf.iter().position(|&c| c == 0).unwrap_or(label_buf.len());
+            let end = label_buf
+                .iter()
+                .position(|&c| c == 0)
+                .unwrap_or(label_buf.len());
             String::from_utf16_lossy(&label_buf[..end])
         })
         .unwrap_or_default();
@@ -583,6 +679,69 @@ pub fn list_drives() -> Vec<Drive> {
         display: "/".into(),
         kind: "fixed".into(),
     }]
+}
+
+/// Extensions handed to the shell only via Explorer's own "show in folder"
+/// flows: opening one with the default app would execute code the user may
+/// never have consented to run — the webview only needs to open documents.
+/// Mirrors the usual "dangerous download" denylist (incl. `img`/`iso`/`vhd*`,
+/// which mount-and-run on Windows).
+const DANGEROUS_EXTS: [&str; 35] = [
+    "exe",
+    "bat",
+    "cmd",
+    "com",
+    "msi",
+    "msp",
+    "ps1",
+    "ps1xml",
+    "vbs",
+    "vbe",
+    "js",
+    "jse",
+    "wsf",
+    "wsh",
+    "wsc",
+    "scr",
+    "hta",
+    "pif",
+    "jar",
+    "msh",
+    "msh1",
+    "msh2",
+    "scf",
+    "gadget",
+    "diagcab",
+    "appx",
+    "msix",
+    "appxbundle",
+    "msixbundle",
+    "lnk",
+    "url",
+    "iso",
+    "img",
+    "vhd",
+    "vhdx",
+];
+
+/// Open a file with the system default app, deliberately gated in Rust:
+/// the webview-facing `opener:allow-open-path` permission was removed, so
+/// this command is the only door to `open_path` and it refuses executable
+/// extensions (see `DANGEROUS_EXTS`).
+#[tauri::command]
+pub async fn open_external(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let ext = Path::new(&path)
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if DANGEROUS_EXTS.contains(&ext.as_str()) {
+        return Err("为安全起见，不能直接打开可执行文件".into());
+    }
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|e| format!("无法用系统默认程序打开文件：{e}"))
 }
 
 #[cfg(test)]
@@ -691,26 +850,67 @@ mod tests {
         let path = dir.join("sample.txt");
 
         let text = "第一行\nsecond line\n".to_string();
-        write_text(path.to_string_lossy().into(), text.clone(), "utf-16le".into(), "crlf".into()).unwrap();
+        tauri::async_runtime::block_on(write_text(
+            path.to_string_lossy().into(),
+            text.clone(),
+            "utf-16le".into(),
+            "crlf".into(),
+            None,
+        ))
+        .unwrap();
 
-        let content = read_text(path.to_string_lossy().into()).unwrap();
+        let content =
+            tauri::async_runtime::block_on(read_text(path.to_string_lossy().into())).unwrap();
         assert_eq!(content.text, text);
         assert_eq!(content.encoding, "utf-16le");
         assert_eq!(content.eol, "crlf");
+        assert!(content.mtime_ms > 0);
 
-        // The temp file must not survive a successful save.
-        let tmp = dir.join(".sample.txt.svcode-tmp");
-        assert!(!tmp.exists());
+        // No leftover temp file by any name after a successful save.
+        let tmp_survived = |dir: &Path| {
+            fs::read_dir(dir)
+                .unwrap()
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().contains("svcode-tmp"))
+        };
+        assert!(!tmp_survived(&dir));
 
         // A failed save (unrepresentable char) must clean up its temp file too.
-        let r = write_text(
+        let r = tauri::async_runtime::block_on(write_text(
             path.to_string_lossy().into(),
             "💥".into(),
             "gbk".into(),
             "lf".into(),
-        );
+            None,
+        ));
         assert!(r.is_err());
-        assert!(!tmp.exists());
+        assert!(!tmp_survived(&dir));
+
+        // A save with a stale expected mtime must be refused, leaving the
+        // original bytes (and no temp file) behind.
+        let r = tauri::async_runtime::block_on(write_text(
+            path.to_string_lossy().into(),
+            "overwritten".into(),
+            "utf-8".into(),
+            "lf".into(),
+            Some(content.mtime_ms + 10_000),
+        ));
+        assert!(r.is_err());
+        assert!(!tmp_survived(&dir));
+        let again =
+            tauri::async_runtime::block_on(read_text(path.to_string_lossy().into())).unwrap();
+        assert_eq!(again.text, text);
+
+        // Matching mtime goes through.
+        let size = tauri::async_runtime::block_on(write_text(
+            path.to_string_lossy().into(),
+            "replaced".into(),
+            "utf-8".into(),
+            "lf".into(),
+            Some(again.mtime_ms),
+        ))
+        .unwrap();
+        assert_eq!(size, "replaced".len() as u64);
 
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -731,6 +931,13 @@ mod tests {
         assert!(valid_name("name ").is_err());
         assert!(valid_name("con").is_err());
         assert!(valid_name("NUL").is_err());
+        // Windows reserves the stem before the first dot, not the whole name.
+        assert!(valid_name("con.txt").is_err());
+        assert!(valid_name("Com1.zip").is_err());
+        assert!(valid_name("contents.txt").is_ok());
+        // control characters (0x01–0x1F) are rejected
+        assert!(valid_name("bad\u{1F}name").is_err());
+        assert!(valid_name("bad\u{01}name").is_err());
     }
 
     #[test]
@@ -751,26 +958,39 @@ mod tests {
             create_file(dir.join("sub").join("inner.txt").to_string_lossy().into()).unwrap()
         });
         // rename file
-        rename_path(p("a.txt"), p("b.txt")).unwrap();
+        tauri::async_runtime::block_on(rename_path(p("a.txt"), p("b.txt"))).unwrap();
         assert!(fs::metadata(p("b.txt")).is_ok());
         // rename onto existing refused
         create_file(p("c.txt")).unwrap();
-        assert!(rename_path(p("b.txt"), p("c.txt")).is_err());
+        assert!(tauri::async_runtime::block_on(rename_path(p("b.txt"), p("c.txt"))).is_err());
         // copy dir recursively
-        copy_path(p("sub"), p("sub-copy")).unwrap();
+        tauri::async_runtime::block_on(copy_path(p("sub"), p("sub-copy"))).unwrap();
         assert!(fs::metadata(dir.join("sub-copy").join("inner.txt")).is_ok());
+        // copy onto existing file/dir refused (no silent overwrite or merge)
+        assert!(tauri::async_runtime::block_on(copy_path(p("sub"), p("c.txt"))).is_err());
+        assert!(tauri::async_runtime::block_on(copy_path(p("b.txt"), p("c.txt"))).is_err());
         // move dir across "volumes" (same volume here, still exercises fallback path shape)
-        move_path(p("sub-copy"), p("sub-moved")).unwrap();
+        tauri::async_runtime::block_on(move_path(p("sub-copy"), p("sub-moved"))).unwrap();
         assert!(fs::metadata(dir.join("sub-moved").join("inner.txt")).is_ok());
-        assert!(!fs::exists(p("sub-copy")).unwrap_or(false) || !fs::metadata(p("sub-copy")).is_ok());
+        assert!(
+            !fs::exists(p("sub-copy")).unwrap_or(false) || !fs::metadata(p("sub-copy")).is_ok()
+        );
+        // move onto existing refused
+        assert!(tauri::async_runtime::block_on(move_path(p("b.txt"), p("c.txt"))).is_err());
+        assert!(
+            fs::metadata(p("b.txt")).is_ok(),
+            "refused move must keep the source"
+        );
         // delete recursive
-        delete_path(p("sub-moved"), true).unwrap();
+        tauri::async_runtime::block_on(delete_path(p("sub-moved"), true)).unwrap();
         assert!(fs::metadata(p("sub-moved")).is_err());
         // delete non-recursive on non-empty refused
-        assert!(delete_path(p("sub"), false).is_err());
+        assert!(tauri::async_runtime::block_on(delete_path(p("sub"), false)).is_err());
         // access probe
-        assert!(check_access(p("sub")));
-        assert!(check_access(dir.join("不存在的目录").to_string_lossy().into()) == false);
+        assert!(tauri::async_runtime::block_on(check_access(p("sub"))));
+        assert!(!tauri::async_runtime::block_on(check_access(
+            dir.join("不存在的目录").to_string_lossy().into()
+        )));
 
         fs::remove_dir_all(&dir).unwrap();
     }

@@ -55,7 +55,7 @@ jobs:
           if [ ! -s body.md ]; then
             printf 'Windows 安装包见下方 Assets。\n' > body.md
           fi
-          printf '本次发布的 Windows 安装包见下方 Assets（.exe 为 NSIS 安装程序，.msi 为 MSI 安装包）。\n' >> body.md
+          printf '本次发布的 Windows 安装包见下方 Assets（.exe 为 NSIS 安装程序）。\n' >> body.md
           {
             echo 'body<<SVCODE_RELEASE_BODY'
             cat body.md

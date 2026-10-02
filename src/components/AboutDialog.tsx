@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useT } from '../lib/i18n'
+import { useFocusTrap } from '../lib/useFocusTrap'
 import logoUrl from '../assets/logo.png'
 import {
   REPO_URL,
@@ -27,6 +28,9 @@ export function AboutDialog({ open, checkSeq, onClose }: Props) {
   const update = useUpdate((s) => s.update)
   const error = useUpdate((s) => s.error)
   const seenSeq = useRef(0)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // Focus the first control and keep Tab cycling inside the dialog.
+  useFocusTrap(dialogRef, open)
 
   useEffect(() => {
     if (!open) return
@@ -68,7 +72,7 @@ export function AboutDialog({ open, checkSeq, onClose }: Props) {
 
   return (
     <div className="about-backdrop" onClick={onClose}>
-      <div className="about-dialog" role="dialog" aria-modal onClick={(e) => e.stopPropagation()}>
+      <div ref={dialogRef} className="about-dialog" role="dialog" aria-modal onClick={(e) => e.stopPropagation()}>
         <div className="about-head">
           <span className="about-logo" aria-hidden>
             <img src={logoUrl} width="38" height="38" alt="" />
